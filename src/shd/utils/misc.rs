@@ -105,19 +105,14 @@ pub async fn log_gas_prices<T: Network>(provider: RootProvider<T>, gas_token_usd
     // Calculate costs in HYPE
     let native_transfer_cost_hype = (gas_price_wei as f64 * GAS_NATIVE_TRANSFER as f64) / 1e18;
     let _usdt_transfer_cost_hype = (gas_price_wei as f64 * GAS_USDT_TRANSFER as f64) / 1e18;
-    let full_rebalance_cost_hype = (gas_price_wei as f64 * GAS_FULL_REBALANCE as f64) / 1e18;
+    let _full_rebalance_cost_hype = (gas_price_wei as f64 * GAS_FULL_REBALANCE as f64) / 1e18;
 
     // Calculate costs in USD
     let native_transfer_cost_usd = native_transfer_cost_hype * gas_token_usd_price;
-    let full_rebalance_cost_usd = full_rebalance_cost_hype * gas_token_usd_price;
+    let _full_rebalance_cost_usd = _full_rebalance_cost_hype * gas_token_usd_price;
 
     // Log the information (simplified)
-    tracing::info!(
-        "⛽ Gas: {:.3} Gwei | Full LP Rebalance: {:.6} HYPE (${:.2} USD)",
-        gas_price_gwei,
-        full_rebalance_cost_hype,
-        full_rebalance_cost_usd
-    );
+    tracing::info!("⛽ Gas: {:.3} Gwei", gas_price_gwei);
 
     Ok((gas_price_wei, gas_price_gwei, native_transfer_cost_usd))
 }

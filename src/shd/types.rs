@@ -157,6 +157,7 @@ pub struct BotConfig {
 pub struct GlobalConfig {
     pub network_name: String,             // Network identifier
     pub rpc_endpoint: String,             // RPC endpoint for blockchain transactions
+    pub broadcast_rpc_endpoint: Option<String>, // Optional RPC endpoint specifically for broadcasting swap transactions
     pub websocket_endpoint: String,       // WebSocket endpoint for real-time events
     pub hyperliquid_api_endpoint: String, // Hyperliquid API endpoint
     pub explorer_base_url: String,        // Blockchain explorer URL
@@ -229,6 +230,12 @@ pub struct ArbTarget {
     pub infinite_approval: bool,
     pub reference: PriceReference,
     pub statistical_arb: bool,
+    #[serde(default = "default_min_trade_value")]
+    pub min_trade_value_usd: f64,
+}
+
+fn default_min_trade_value() -> f64 {
+    10.0
 }
 
 impl BotConfig {

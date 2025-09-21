@@ -110,6 +110,43 @@ pub async fn approve(rpc: &str, signer: &PrivateKeySigner, spender: &str, token:
     }
 }
 
+/// Get token decimals and balances for two tokens
+pub async fn get_token_info_and_balances(
+    rpc: &str,
+    owner: &str,
+    base_token: &str,
+    quote_token: &str,
+) -> Result<(u8, u8, u128, u128), String> {
+    let provider = RootProvider::<Ethereum>::new_http(rpc.parse().unwrap());
+    let client = Arc::new(provider);
+    
+    // Parse addresses
+    let base_addr: Address = base_token.parse().map_err(|e| format!("Invalid base token address: {}", e))?;
+    let quote_addr: Address = quote_token.parse().map_err(|e| format!("Invalid quote token address: {}", e))?;
+    let owner_addr: Address = owner.parse().map_err(|e| format!("Invalid owner address: {}", e))?;
+    
+    // Get base token info
+    let base_contract = IERC20::new(base_addr, client.clone());
+    let base_decimals = base_contract.decimals().call().await
+        .map_err(|e| format!("Failed to get base decimals: {:?}", e))?;
+    let base_balance = base_contract.balanceOf(owner_addr).call().await
+        .map_err(|e| format!("Failed to get base balance: {:?}", e))?;
+    
+    // Get quote token info
+    let quote_contract = IERC20::new(quote_addr, client.clone());
+    let quote_decimals = quote_contract.decimals().call().await
+        .map_err(|e| format!("Failed to get quote decimals: {:?}", e))?;
+    let quote_balance = quote_contract.balanceOf(owner_addr).call().await
+        .map_err(|e| format!("Failed to get quote balance: {:?}", e))?;
+    
+    Ok((
+        base_decimals,
+        quote_decimals,
+        base_balance.to::<u128>(),
+        quote_balance.to::<u128>(),
+    ))
+}
+
 pub async fn init_allowance(config: &BotConfig, env: &EnvConfig) {
     let target_allowance = u128::MAX / 2;
     let approve_amount = u128::MAX;
