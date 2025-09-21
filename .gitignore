@@ -1,0 +1,11 @@
+/target
+config/.env
+config/.env.prod
+node_modules
+target
+config/main.demo.toml
+CLAUDE.local.md
+*.env*
+*secret*
+*key*
+*token*

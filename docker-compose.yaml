@@ -1,0 +1,37 @@
+# To validate it, run: docker compose config
+# docker network create hx
+
+networks:
+  hyperarb: 
+    external: true
+
+services:
+
+  manager:
+    build: 
+      context: .
+      dockerfile: ops/Dockerfile
+      args:
+        - PROGRAM=rebalancer
+        - BUILD_TYPE=debug
+    depends_on: []
+    environment:
+      - RUST_LOG=off,shd=trace,rebalancer=trace,test=trace
+    restart: always
+    networks:
+      - hx
+
+  arbitrager:
+    build: 
+      context: .
+      dockerfile: ops/Dockerfile
+      args:
+        - PROGRAM=arbitrager
+        - BUILD_TYPE=debug
+    depends_on: []
+    environment:
+      - RUST_LOG=off,shd=trace,arbitrager=trace,test=trace
+    restart: always
+    networks:
+      - hx
+  

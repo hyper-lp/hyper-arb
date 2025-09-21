@@ -1,0 +1,56 @@
+[package]
+name = "HyperArb"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+chrono = "0.4.23"
+toml = "0.8.12"
+serde = { version = "1.0.104", features = ["derive"] }
+serde_json = "1.0"
+env_logger = "0.11.3"
+eyre = "0.6.11"
+url = "2.5.0"
+anyhow = "1.0"
+hex = "0.4.3"
+hmac = "0.12"
+sha2 = "0.10"
+fern = { version = "0.6.2", features = ["colored"] }
+colored = "2.0.0"
+rand = "0.8.5"
+dotenv = "0.15.0"
+dotenv_codegen = "0.15.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+num-traits = "0.2.19"
+
+# --- Async ---
+futures = "0.3.31"
+tokio = { version = "1.28", features = ["full", "tracing"] }
+reqwest = { version = "0.12.19", features = ["json"] }
+strum = "0.26"
+strum_macros = "0.26"
+async-trait = "0.1.83"
+webhook = "2.1.2"
+
+# --- DB ---
+sea-orm = { version = "^0.12.0", features = ["sqlx-postgres", "runtime-async-std-native-tls", "macros"] }
+
+# --- Web3 ---
+alloy = { version = "1.0", features = ["full"] }
+uuid = { version = "1.17.0", features = ["v4"] }
+hyperliquid_rust_sdk = { git = "https://github.com/hyperliquid-dex/hyperliquid-rust-sdk.git", rev = "e02f3f697ad7737b3103f527ebe03d97f76d2d87"}
+
+[lib]
+name = "shd"
+path = "src/shd/lib.rs"
+
+[[bin]]
+name = "rebalancer"
+path = "src/rebalancer.rs"
+
+[[bin]]
+name = "arbitrager"
+path = "src/arbitrager.rs"
+

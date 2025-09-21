@@ -1,0 +1,113 @@
+[global]
+# Network identifier for the target blockchain
+network_name = "hyperevm"
+# RPC endpoint for blockchain transactions and queries
+rpc_endpoint = "https://hyperliquid.valtitude.xyz?apiKey=5bc51b42-1575-40ae-998f-81c4ef067f6a"
+# rpc_endpoint = "https://rpc.hyperliquid.xyz/evm"
+# rpc_endpoint = "https://hyperliquid-mainnet.g.alchemy.com/v2/T4Jmj7HYUBr1psFAZh415"
+# rpc_endpoint = "http://127.0.0.1:8545"
+# WebSocket endpoint for real-time blockchain events
+websocket_endpoint = "wss://hyperliquid.drpc.org"
+# Hyperliquid API endpoint for trading and market data
+hyperliquid_api_endpoint = "https://api.hyperliquid.xyz"
+# Blockchain explorer base URL for transaction viewing
+explorer_base_url = "https://hyperevmscan.io/"
+
+# HyperEVM Configuration
+# Contract addresses and token configurations for the HyperEVM chain
+[hyperevm]
+# CoreWriter contract for cross-chain transfers between HyperEVM and HyperCore
+core_bridge_contract = "0x3333333333333333333333333333333333333333"
+# Wrapped HYPE Address on HyperEVM (like WETH)
+wrapped_hype_token_address = "0x5555555555555555555555555555555555555555"
+# HYPE token address on L1 (used for bridging operations)
+bridge_hype_token_address = "0x2222222222222222222222222222222222222222"
+# Liquid Labs Dex Agg router for swap execution
+liqd_multi_hop_router_address = "0x744489ee3d540777a66f2cf297479745e0852f7a"
+# Liquid Labs API endpoint (required)
+liquidswap_api_endpoint = "https://api.liqd.ag/v2"
+
+# Gas and Transaction Configuration
+# Settings for gas estimation and slippage protection
+[gas]
+# Gas multiplier for mainnet transactions to prevent ReentrancySentryOOG errors
+# Applied to estimated gas for complex operations (mint, decreaseLiquidity, collect, etc.)
+gas_estimate_multiplier = 1.5
+# Slippage tolerance percentage for liquidity withdrawal (5.0 = 5% slippage tolerance)
+slippage_tolerance_percent = 5.0
+# Native HYPE reserve amount to keep when wrapping to WHYPE (in native HYPE units)
+native_hype_reserve_amount = 0.25
+# Maximum gas price in gwei above which rebalancing is skipped (10.0 = 10 gwei)
+max_gas_price_gwei = 10.0
+# Gas price multiplier for transactions (1.5 = 50% increase over base gas price)
+gas_price_multiplier = 1.5
+
+[[dex]]
+name = "hyperswap"
+version = "v3"
+factory = "0xB1c0fa0B789320044A6F623cFe5eBda9562602E3"
+router = "0x6D99e7f6747AF2cDbB5164b6DD50e40D4fDe1e77"  
+quoter = "0x03A918028f22D9E1473B7959C927AD7425A45C7C"   
+position_manager = "0x6eDA206207c09e5428F281761DdC0D300851fBC8"
+
+[[dex]]
+name = "projectx"
+version = "v3"
+factory = "0xFf7B3e8C00e57ea31477c32A5B52a58Eea47b072"  
+router = "0x1EbDFC75FfE3ba3de61E7138a3E8706aC841Af9B"
+quoter = "0x239F11a7A3E08f2B8110D4CA9F6B95d4c8865258"
+position_manager = "0xeaD19AE861c29bBb2101E834922B2FEee69B9091"
+
+# Arbitrage Targets Configuration
+
+# === Global ===
+[[targets]]
+vault_name = "alpha"
+address = "0x15bB17E4D2F7ACcca7c9610133c27e9eAB9EC815"
+base_token = "BTC"
+quote_token = "0xUSDT0"
+hyperswap_pools = []
+prjx_pools = []
+min_watch_spread_bps = 5.0
+min_executable_spread_bps = -5.0
+max_slippage_pct = 0.0005
+max_inventory_ratio = 0.2
+tx_gas_limit = 300000
+poll_interval_ms = 500
+publish_events = false
+skip_simulation = false 
+infinite_approval = false
+
+# [[targets]]
+# vault_name = "bravo"
+# address = "0x"
+# base_token = "ETH"
+# quote_token = "0xUSDT0"
+# hyperswap_pools = []
+# prjx_pools = []
+# min_watch_spread_bps = 5.0
+# min_executable_spread_bps = -5.0
+# max_slippage_pct = 0.0005
+# max_inventory_ratio = 0.2
+# tx_gas_limit = 300000
+# poll_interval_ms = 500
+# publish_events = false
+# skip_simulation = false 
+# infinite_approval = false
+
+# [[targets]]
+# vault_name = "charlie"
+# address = "0x"
+# base_token = "HYPE"
+# quote_token = "0xUSDT0"
+# hyperswap_pools = []
+# prjx_pools = []
+# min_watch_spread_bps = 5.0
+# min_executable_spread_bps = -5.0
+# max_slippage_pct = 0.0005
+# max_inventory_ratio = 0.2
+# tx_gas_limit = 300000
+# poll_interval_ms = 500
+# publish_events = false
+# skip_simulation = false 
+# infinite_approval = false
