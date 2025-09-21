@@ -64,6 +64,16 @@ impl PythPriceIds {
         "0x4279e31cc369bbcc2faf022b382b080e32a8e689ff20fbc530d2a603eb6cd98b";
 }
 
+pub async fn fetch_btc_usd_price() -> Result<f64> {
+    let pyth = Pyth::new();
+    pyth.get_single_price(PythPriceIds::BTC_USD).await
+}
+
+pub async fn fetch_eth_usd_price() -> Result<f64> {
+    let pyth = Pyth::new();
+    pyth.get_single_price(PythPriceIds::ETH_USD).await
+}
+
 pub async fn fetch_hype_usd_price() -> Result<f64> {
     let pyth = Pyth::new();
     pyth.get_single_price(PythPriceIds::HYPE_USD).await

@@ -1,15 +1,15 @@
-/// HyperCore/HyperEVM blockchain interaction
+/// Core functionality and precompiles
 pub mod core;
 /// Database operations and entity management
 pub mod data;
-/// DEX operations (Uniswap V3, swaps, liquidity)
+/// DEX utilities and pool data
 pub mod dex;
-/// Utilities, notifications, and helper functions
-pub mod misc;
 /// Solidity ABIs
 pub mod sol;
 /// Type definitions and configuration structures
 pub mod types;
+/// Utilities and helper functions
+pub mod utils;
 
 /// Oracles and external data fetching
 pub mod oracles;

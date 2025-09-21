@@ -1,0 +1,8 @@
+max_width = 200
+reorder_imports = true
+# brace_style = "PreferSameLine"     
+fn_params_layout = "Compressed"    
+hard_tabs = false                  
+newline_style = "Unix"             
+use_field_init_shorthand = true
+merge_derives = true

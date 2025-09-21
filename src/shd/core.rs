@@ -1,1 +1,0 @@
-// HyperCore/HyperEVM blockchain interaction

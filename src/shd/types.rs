@@ -50,15 +50,9 @@ impl EnvConfig {
         });
 
         // Parse comma-separated values
-        let wallet_pub_keys: Vec<String> = wallet_pub_keys_str
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .collect();
+        let wallet_pub_keys: Vec<String> = wallet_pub_keys_str.split(',').map(|s| s.trim().to_lowercase()).collect();
 
-        let wallet_private_keys: Vec<String> = wallet_private_keys_str
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect();
+        let wallet_private_keys: Vec<String> = wallet_private_keys_str.split(',').map(|s| s.trim().to_string()).collect();
 
         // Load hyperdrive webhook (required)
 
@@ -69,9 +63,7 @@ impl EnvConfig {
             wallet_private_keys,
         };
 
-        output
-            .validate_wallets()
-            .expect("Invalid wallet configuration");
+        output.validate_wallets().expect("Invalid wallet configuration");
         output.print();
         output
     }
@@ -81,10 +73,7 @@ impl EnvConfig {
         tracing::info!("   Testing = {}", self.testing);
 
         tracing::info!("   Database URL = 🗄️ (size: {})", self.database_url.len());
-        tracing::info!(
-            "   Multi-wallet: {} wallets configured",
-            self.wallet_pub_keys.len()
-        );
+        tracing::info!("   Multi-wallet: {} wallets configured", self.wallet_pub_keys.len());
     }
 
     /// Validates that public keys and private keys match by count and that each private key
@@ -101,25 +90,14 @@ impl EnvConfig {
 
         // Check that we have at least one wallet
         if self.wallet_pub_keys.is_empty() {
-            return Err(
-                "No wallets configured - WALLET_PUB_KEYS and WALLET_PRIVATE_KEYS cannot be empty"
-                    .to_string(),
-            );
+            return Err("No wallets configured - WALLET_PUB_KEYS and WALLET_PRIVATE_KEYS cannot be empty".to_string());
         }
 
         // Validate each wallet pair
-        for (i, (pub_key, priv_key)) in self
-            .wallet_pub_keys
-            .iter()
-            .zip(self.wallet_private_keys.iter())
-            .enumerate()
-        {
+        for (i, (pub_key, priv_key)) in self.wallet_pub_keys.iter().zip(self.wallet_private_keys.iter()).enumerate() {
             // Validate public key format (0x + 40 hex chars)
             if !pub_key.starts_with("0x") || pub_key.len() != 42 {
-                return Err(format!(
-                    "Wallet {}: public key '{}' must be a valid Ethereum address",
-                    i, pub_key
-                ));
+                return Err(format!("Wallet {}: public key '{}' must be a valid Ethereum address", i, pub_key));
             }
 
             // Try to create a signer from the private key
@@ -133,17 +111,11 @@ impl EnvConfig {
 
             // Check if the derived address matches the provided public key
             if derived_address != pub_key.to_lowercase() {
-                return Err(format!(
-                    "Wallet {}: private key derives to address '{}' but public key is '{}'",
-                    i, derived_address, pub_key
-                ));
+                return Err(format!("Wallet {}: private key derives to address '{}' but public key is '{}'", i, derived_address, pub_key));
             }
         }
 
-        tracing::info!(
-            "✅ All {} wallets validated successfully",
-            self.wallet_pub_keys.len()
-        );
+        tracing::info!("✅ All {} wallets validated successfully", self.wallet_pub_keys.len());
         Ok(())
     }
 
@@ -178,7 +150,7 @@ pub struct BotConfig {
     pub hyperevm: HyperEvmConfig,
     pub gas: GasConfig,
     pub dex: Vec<DexConfig>,
-    pub targets: Vec<ArbTargets>,
+    pub targets: Vec<ArbTarget>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -192,20 +164,20 @@ pub struct GlobalConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HyperEvmConfig {
-    pub core_bridge_contract: String, // CoreWriter contract for cross-chain transfers
-    pub wrapped_hype_token_address: String, // Wrapped HYPE token address on HyperEVM (like WETH)
-    pub bridge_hype_token_address: String, // HYPE token address for L1 bridging operations
+    pub core_bridge_contract: String,          // CoreWriter contract for cross-chain transfers
+    pub wrapped_hype_token_address: String,    // Wrapped HYPE token address on HyperEVM (like WETH)
+    pub bridge_hype_token_address: String,     // HYPE token address for L1 bridging operations
     pub liqd_multi_hop_router_address: String, // Liquid Labs multi-hop router for DEX aggregation
-    pub liquidswap_api_endpoint: String, // Liquid Labs API endpoint (required in config)
+    pub liquidswap_api_endpoint: String,       // Liquid Labs API endpoint (required in config)
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct GasConfig {
-    pub gas_estimate_multiplier: f64, // Multiplier for gas estimates (e.g., 1.5 = 50% buffer)
+    pub gas_estimate_multiplier: f64,    // Multiplier for gas estimates (e.g., 1.5 = 50% buffer)
     pub slippage_tolerance_percent: f64, // Slippage tolerance in percent (e.g., 5.0 = 5%)
     pub native_hype_reserve_amount: f64, // Native HYPE reserve amount to keep when wrapping (e.g., 0.1 HYPE)
-    pub max_gas_price_gwei: f64, // Maximum gas price in gwei above which rebalancing is skipped (e.g., 3.0 = 3 gwei)
-    pub gas_price_multiplier: f64, // Gas price multiplier for transactions (e.g., 1.5 = 50% increase)
+    pub max_gas_price_gwei: f64,         // Maximum gas price in gwei above which rebalancing is skipped (e.g., 3.0 = 3 gwei)
+    pub gas_price_multiplier: f64,       // Gas price multiplier for transactions (e.g., 1.5 = 50% increase)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -218,12 +190,32 @@ pub struct DexConfig {
     pub position_manager: String, // Position manager address (required)
 }
 
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PriceReference {
+    Pyth,
+    Redstone,
+    Hypercore,
+}
+
+impl std::fmt::Display for PriceReference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PriceReference::Pyth => write!(f, "pyth"),
+            PriceReference::Redstone => write!(f, "redstone"),
+            PriceReference::Hypercore => write!(f, "hypercore"),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
-pub struct ArbTargets {
+pub struct ArbTarget {
     pub vault_name: String,
     pub address: String,
     pub base_token: String,
+    pub base_token_address: String,
     pub quote_token: String,
+    pub quote_token_address: String,
     pub hyperswap_pools: Vec<String>,
     pub prjx_pools: Vec<String>,
     pub min_watch_spread_bps: f64,
@@ -235,6 +227,8 @@ pub struct ArbTargets {
     pub publish_events: bool,
     pub skip_simulation: bool,
     pub infinite_approval: bool,
+    pub reference: PriceReference,
+    pub statistical_arb: bool,
 }
 
 impl BotConfig {
@@ -242,62 +236,23 @@ impl BotConfig {
         tracing::debug!(" >>> Config <<<");
         tracing::debug!("  Network:                {}", self.global.network_name);
         tracing::debug!("  RPC Endpoint:           {}", self.global.rpc_endpoint);
-        tracing::debug!(
-            "  WebSocket Endpoint:     {}",
-            self.global.websocket_endpoint
-        );
-        tracing::debug!(
-            "  Hyperliquid API:        {}",
-            self.global.hyperliquid_api_endpoint
-        );
-        tracing::debug!(
-            "  Explorer URL:           {}",
-            self.global.explorer_base_url
-        );
-        tracing::debug!(
-            "  Core Bridge Contract:   {}",
-            self.hyperevm.core_bridge_contract
-        );
-        tracing::debug!(
-            "  Wrapped HYPE Address:   {}",
-            self.hyperevm.wrapped_hype_token_address
-        );
-        tracing::debug!(
-            "  Bridge HYPE Address:    {}",
-            self.hyperevm.bridge_hype_token_address
-        );
+        tracing::debug!("  WebSocket Endpoint:     {}", self.global.websocket_endpoint);
+        tracing::debug!("  Hyperliquid API:        {}", self.global.hyperliquid_api_endpoint);
+        tracing::debug!("  Explorer URL:           {}", self.global.explorer_base_url);
+        tracing::debug!("  Core Bridge Contract:   {}", self.hyperevm.core_bridge_contract);
+        tracing::debug!("  Wrapped HYPE Address:   {}", self.hyperevm.wrapped_hype_token_address);
+        tracing::debug!("  Bridge HYPE Address:    {}", self.hyperevm.bridge_hype_token_address);
 
-        tracing::debug!(
-            "  Liquid Labs Router:     {}",
-            self.hyperevm.liqd_multi_hop_router_address
-        );
-        tracing::debug!(
-            "  Liquid Labs API:        {}",
-            self.hyperevm.liquidswap_api_endpoint
-        );
-        tracing::debug!(
-            "  Gas Estimate Multiplier: {}x",
-            self.gas.gas_estimate_multiplier
-        );
-        tracing::debug!(
-            "  Slippage Tolerance:     {}%",
-            self.gas.slippage_tolerance_percent
-        );
-        tracing::debug!(
-            "  Native HYPE Reserve:    {} HYPE",
-            self.gas.native_hype_reserve_amount
-        );
+        tracing::debug!("  Liquid Labs Router:     {}", self.hyperevm.liqd_multi_hop_router_address);
+        tracing::debug!("  Liquid Labs API:        {}", self.hyperevm.liquidswap_api_endpoint);
+        tracing::debug!("  Gas Estimate Multiplier: {}x", self.gas.gas_estimate_multiplier);
+        tracing::debug!("  Slippage Tolerance:     {}%", self.gas.slippage_tolerance_percent);
+        tracing::debug!("  Native HYPE Reserve:    {} HYPE", self.gas.native_hype_reserve_amount);
 
         if !self.dex.is_empty() {
             tracing::debug!("  DEX Configurations:");
             for dex in &self.dex {
-                tracing::debug!(
-                    "   - {} ({}): Factory={}, Router={}",
-                    dex.name,
-                    dex.version,
-                    dex.factory,
-                    dex.router
-                );
+                tracing::debug!("   - {} ({}): Factory={}, Router={}", dex.name, dex.version, dex.factory, dex.router);
             }
         }
 
@@ -318,6 +273,8 @@ impl BotConfig {
                 tracing::debug!("   ║ Publish Events: {}", track.publish_events);
                 tracing::debug!("   ║ Skip Simulation: {}", track.skip_simulation);
                 tracing::debug!("   ║ Infinite Approval: {}", track.infinite_approval);
+                tracing::debug!("   ║ Price Reference: {}", track.reference);
+                tracing::debug!("   ║ Statistical Arb: {}", track.statistical_arb);
                 tracing::debug!("   ╚════════════════════╝");
             }
         }
@@ -352,45 +309,29 @@ impl BotConfig {
         }
 
         // Validate HyperEVM addresses are properly formatted (0x + 40 hex chars)
-        if !self.hyperevm.core_bridge_contract.starts_with("0x")
-            || self.hyperevm.core_bridge_contract.len() != 42
-        {
+        if !self.hyperevm.core_bridge_contract.starts_with("0x") || self.hyperevm.core_bridge_contract.len() != 42 {
             return Err("Core bridge contract must be a valid Ethereum address".to_string());
         }
-        if !self.hyperevm.wrapped_hype_token_address.starts_with("0x")
-            || self.hyperevm.wrapped_hype_token_address.len() != 42
-        {
+        if !self.hyperevm.wrapped_hype_token_address.starts_with("0x") || self.hyperevm.wrapped_hype_token_address.len() != 42 {
             return Err("Wrapped HYPE token address must be a valid Ethereum address".to_string());
         }
-        if !self.hyperevm.bridge_hype_token_address.starts_with("0x")
-            || self.hyperevm.bridge_hype_token_address.len() != 42
-        {
+        if !self.hyperevm.bridge_hype_token_address.starts_with("0x") || self.hyperevm.bridge_hype_token_address.len() != 42 {
             return Err("Bridge HYPE token address must be a valid Ethereum address".to_string());
         }
 
-        if !self
-            .hyperevm
-            .liqd_multi_hop_router_address
-            .starts_with("0x")
-            || self.hyperevm.liqd_multi_hop_router_address.len() != 42
-        {
-            return Err(
-                "Liquid Labs multi-hop router address must be a valid Ethereum address".to_string(),
-            );
+        if !self.hyperevm.liqd_multi_hop_router_address.starts_with("0x") || self.hyperevm.liqd_multi_hop_router_address.len() != 42 {
+            return Err("Liquid Labs multi-hop router address must be a valid Ethereum address".to_string());
         }
 
         // Validate Gas configuration
         if self.gas.gas_estimate_multiplier <= 0.0 {
-            return Err(
-                "Gas estimate multiplier must be positive (recommended: 1.5-3.0)".to_string(),
-            );
+            return Err("Gas estimate multiplier must be positive (recommended: 1.5-3.0)".to_string());
         }
         if self.gas.gas_estimate_multiplier > 10.0 {
             return Err("Gas estimate multiplier is too high (recommended: 1.5-3.0)".to_string());
         }
 
-        if self.gas.slippage_tolerance_percent <= 0.0 || self.gas.slippage_tolerance_percent > 50.0
-        {
+        if self.gas.slippage_tolerance_percent <= 0.0 || self.gas.slippage_tolerance_percent > 50.0 {
             return Err("Slippage tolerance must be between 0.1% and 50%".to_string());
         }
         if self.gas.native_hype_reserve_amount < 0.0 || self.gas.native_hype_reserve_amount > 10.0 {
@@ -410,35 +351,19 @@ impl BotConfig {
             }
 
             // Only validate non-empty addresses (empty addresses indicate TODO/not configured)
-            if !dex.factory.is_empty()
-                && (!dex.factory.starts_with("0x") || dex.factory.len() != 42)
-            {
-                return Err(format!(
-                    "DEX {} factory address must be a valid Ethereum address",
-                    dex.name
-                ));
+            if !dex.factory.is_empty() && (!dex.factory.starts_with("0x") || dex.factory.len() != 42) {
+                return Err(format!("DEX {} factory address must be a valid Ethereum address", dex.name));
             }
             if !dex.router.is_empty() && (!dex.router.starts_with("0x") || dex.router.len() != 42) {
-                return Err(format!(
-                    "DEX {} router address must be a valid Ethereum address",
-                    dex.name
-                ));
+                return Err(format!("DEX {} router address must be a valid Ethereum address", dex.name));
             }
             if !dex.quoter.is_empty() && (!dex.quoter.starts_with("0x") || dex.quoter.len() != 42) {
-                return Err(format!(
-                    "DEX {} quoter address must be a valid Ethereum address",
-                    dex.name
-                ));
+                return Err(format!("DEX {} quoter address must be a valid Ethereum address", dex.name));
             }
 
             // Validate optional fields if present
-            if !dex.position_manager.is_empty()
-                && (!dex.position_manager.starts_with("0x") || dex.position_manager.len() != 42)
-            {
-                return Err(format!(
-                    "DEX {} position manager address must be a valid Ethereum address",
-                    dex.name
-                ));
+            if !dex.position_manager.is_empty() && (!dex.position_manager.starts_with("0x") || dex.position_manager.len() != 42) {
+                return Err(format!("DEX {} position manager address must be a valid Ethereum address", dex.name));
             }
         }
 
@@ -448,10 +373,16 @@ impl BotConfig {
                 return Err("targets vault name cannot be empty".to_string());
             }
             if !track.address.starts_with("0x") || track.address.len() != 42 {
-                return Err(format!(
-                    "targets address for {} must be a valid Ethereum address",
+                return Err(format!("targets address for {} must be a valid Ethereum address", track.vault_name));
+            }
+
+            // Validate statistical arbitrage configuration
+            if track.statistical_arb && track.reference != PriceReference::Hypercore {
+                tracing::warn!(
+                    "Target {}: statistical_arb is enabled but reference is not 'hypercore'. \
+                    Statistical arbitrage typically requires Hypercore for cross-chain price feeds.",
                     track.vault_name
-                ));
+                );
             }
         }
 
@@ -503,28 +434,21 @@ impl BotConfig {
 
     /// Get all configured DEXs (have non-empty factory and router)
     pub fn get_configured_dexs(&self) -> Vec<&DexConfig> {
-        self.dex
-            .iter()
-            .filter(|d| !d.factory.is_empty() && !d.router.is_empty())
-            .collect()
+        self.dex.iter().filter(|d| !d.factory.is_empty() && !d.router.is_empty()).collect()
     }
 
     /// Get all targets addresses
-    pub fn get_tracked_addresses(&self) -> Vec<&ArbTargets> {
+    pub fn get_tracked_addresses(&self) -> Vec<&ArbTarget> {
         self.targets.iter().collect()
     }
 }
 
-impl ArbTargets {
+impl ArbTarget {
     /// Returns a formatted log string with targets account data
     /// Format: "vault_name-first7chars"
     /// Example: "alice-0x1a2b3c4"
     pub fn format_log_info(&self) -> String {
-        let address_short = if self.address.len() >= 7 {
-            &self.address[..7]
-        } else {
-            &self.address
-        };
+        let address_short = if self.address.len() >= 7 { &self.address[..7] } else { &self.address };
 
         format!("{}-{}", self.vault_name, address_short)
     }
