@@ -9,3 +9,18 @@ CLAUDE.local.md
 *secret*
 *key*
 *token*
+
+# TypeScript compiled files
+dist/
+*.tsbuildinfo
+
+# npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock

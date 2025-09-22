@@ -1,0 +1,24 @@
+{
+  "name": "hyper-arb-manager",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "TypeScript inventory manager for HyperArb system",
+  "main": "dist/manager/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/manager/main.js",
+    "dev": "tsc && node dist/manager/main.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "ethers": "^6.0.0",
+    "toml": "^3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "keywords": ["arbitrage", "defi", "hyperliquid", "rebalancing"],
+  "author": "HyperArb Team",
+  "license": "MIT"
+}
