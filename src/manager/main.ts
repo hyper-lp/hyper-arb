@@ -13,6 +13,12 @@ import * as TOML from 'toml';
 console.log(process.cwd());
 config({ path: join(process.cwd(), 'config', '.env') });
 
+// Helper function for USD formatting
+function formatUsdValue(amount: bigint): string {
+    const usd = Number(amount) / 1e8;
+    return `$${usd.toFixed(2)}`;
+}
+
 // Multi-wallet environment configuration (matching Rust EnvConfig)
 interface WalletConfig {
     publicKeys: string[];
@@ -102,7 +108,8 @@ function loadConfig() {
 class HyperArbManager {
     private config: any;
     private walletConfig: WalletConfig;
-    private provider: ethers.JsonRpcProvider;
+    private readProvider: ethers.JsonRpcProvider;
+    private broadcastProvider: ethers.JsonRpcProvider;
     private isRunning: boolean = false;
     private demoMode: boolean;
 
@@ -110,7 +117,13 @@ class HyperArbManager {
         this.config = loadConfig();
         this.demoMode = this.config.demoMode;
         this.walletConfig = this.demoMode ? { publicKeys: [], privateKeys: [] } : loadWalletConfig();
-        this.provider = new ethers.JsonRpcProvider(this.config.global.rpc_endpoint);
+
+        // Create separate providers for reading and broadcasting
+        this.readProvider = new ethers.JsonRpcProvider(this.config.global.rpc_endpoint);
+        this.broadcastProvider = new ethers.JsonRpcProvider(this.config.global.broadcast_rpc_endpoint);
+
+        console.log(`🔍 Read RPC: ${this.config.global.rpc_endpoint}`);
+        console.log(`📡 Broadcast RPC: ${this.config.global.broadcast_rpc_endpoint}`);
 
         // Setup graceful shutdown
         this.setupGracefulShutdown();
@@ -196,21 +209,36 @@ class HyperArbManager {
 
         try {
             // Create a dummy signer for read-only operations (won't be used for transactions)
-            const dummySigner = new ethers.Wallet('0x' + '1'.repeat(64), this.provider);
+            const dummySigner = new ethers.Wallet('0x' + '1'.repeat(64), this.broadcastProvider);
             const { BalanceMonitor } = await import('./utils/BalanceMonitor.js');
-            const monitor = new BalanceMonitor(this.provider, dummySigner);
+            const monitor = new BalanceMonitor(this.readProvider, dummySigner);
 
             // Get real portfolio snapshot
             const portfolio = await monitor.getPortfolioSnapshot(target);
 
             console.log(`📊 Portfolio Snapshot:`);
-            console.log(`  Base (${target.base_token}): ${ethers.formatUnits(portfolio.baseToken.balance.totalBalance, portfolio.baseToken.balance.decimals)} ($${Number(portfolio.baseToken.valueUsd) / 1e8})`);
-            console.log(`    EVM: ${ethers.formatUnits(portfolio.baseToken.balance.evmBalance, portfolio.baseToken.balance.decimals)}`);
-            console.log(`    Core: ${ethers.formatUnits(portfolio.baseToken.balance.coreBalance, portfolio.baseToken.balance.decimals)}`);
-            console.log(`  Quote (${target.quote_token}): ${ethers.formatUnits(portfolio.quoteToken.balance.totalBalance, portfolio.quoteToken.balance.decimals)} ($${Number(portfolio.quoteToken.valueUsd) / 1e8})`);
-            console.log(`    EVM: ${ethers.formatUnits(portfolio.quoteToken.balance.evmBalance, portfolio.quoteToken.balance.decimals)}`);
-            console.log(`    Core: ${ethers.formatUnits(portfolio.quoteToken.balance.coreBalance, portfolio.quoteToken.balance.decimals)}`);
-            console.log(`  Total Value: $${Number(portfolio.totalValueUsd) / 1e8}`);
+
+            // Base token
+            const baseDecimals = Number(portfolio.baseToken.balance.decimals);
+            const baseBalance = Number(portfolio.baseToken.balance.totalBalance) / (10 ** baseDecimals);
+            const baseEvmBalance = Number(portfolio.baseToken.balance.evmBalance) / (10 ** baseDecimals);
+            const baseCoreBalance = Number(portfolio.baseToken.balance.coreBalance) / (10 ** baseDecimals);
+
+            console.log(`  Base (${target.base_token}): ${baseBalance.toFixed(8)} ${target.base_token} (${formatUsdValue(portfolio.baseToken.valueUsd)})`);
+            console.log(`    EVM: ${baseEvmBalance.toFixed(8)}`);
+            console.log(`    Core: ${baseCoreBalance.toFixed(8)}`);
+
+            // Quote token  
+            const quoteDecimals = Number(portfolio.quoteToken.balance.decimals);
+            const quoteBalance = Number(portfolio.quoteToken.balance.totalBalance) / (10 ** quoteDecimals);
+            const quoteEvmBalance = Number(portfolio.quoteToken.balance.evmBalance) / (10 ** quoteDecimals);
+            const quoteCoreBalance = Number(portfolio.quoteToken.balance.coreBalance) / (10 ** quoteDecimals);
+
+            console.log(`  Quote (${target.quote_token}): ${quoteBalance.toFixed(6)} ${target.quote_token} (${formatUsdValue(portfolio.quoteToken.valueUsd)})`);
+            console.log(`    EVM: ${quoteEvmBalance.toFixed(6)}`);
+            console.log(`    Core: ${quoteCoreBalance.toFixed(6)}`);
+
+            console.log(`  Total Value: ${formatUsdValue(portfolio.totalValueUsd)}`);
             console.log(`  Allocations: ${portfolio.baseAllocationPercent.toFixed(2)}% Base / ${portfolio.quoteAllocationPercent.toFixed(2)}% Quote`);
 
             // Analyze rebalancing need
@@ -349,94 +377,113 @@ class HyperArbManager {
 
     private async productionModeMonitoring(target: any) {
         console.log(`🔑 [${target.vault_name}] Production monitoring...`);
-        
+
         try {
             // Validate wallet configuration
             if (this.walletConfig.privateKeys.length === 0) {
                 console.error(`❌ No wallets configured for production mode`);
                 return;
             }
-            
+
             // Use the first available wallet for this target (typical pattern)
             // In the future, this could be enhanced with target-specific wallet mapping
             const privateKey = this.walletConfig.privateKeys[0];
             const walletAddress = this.walletConfig.publicKeys[0];
-            
+
             console.log(`📋 Using wallet: ${walletAddress} for target: ${target.vault_name}`);
-            
-            // Create signer for this wallet
-            const signer = new ethers.Wallet(privateKey, this.provider);
+
+            // Create signer for this wallet with broadcast provider for transactions
+            const signer = new ethers.Wallet(privateKey, this.broadcastProvider);
             const { BalanceMonitor } = await import('./utils/BalanceMonitor.js');
-            const monitor = new BalanceMonitor(this.provider, signer);
-            
+            const monitor = new BalanceMonitor(this.readProvider, signer);
+
             // Verify wallet address matches signer
             const signerAddress = await signer.getAddress();
             if (signerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
                 throw new Error(`Wallet address mismatch: expected ${walletAddress}, got ${signerAddress}`);
             }
-            
+
             // Get real portfolio snapshot
             const portfolio = await monitor.getPortfolioSnapshot(target);
-            
+
             console.log(`📊 Portfolio Snapshot:`);
-            console.log(`  Base (${target.base_token}): ${ethers.formatUnits(portfolio.baseToken.balance.totalBalance, portfolio.baseToken.balance.decimals)} ($${Number(portfolio.baseToken.valueUsd) / 1e8})`);
-            console.log(`    EVM: ${ethers.formatUnits(portfolio.baseToken.balance.evmBalance, portfolio.baseToken.balance.decimals)}`);
-            console.log(`    Core: ${ethers.formatUnits(portfolio.baseToken.balance.coreBalance, portfolio.baseToken.balance.decimals)}`);
-            console.log(`  Quote (${target.quote_token}): ${ethers.formatUnits(portfolio.quoteToken.balance.totalBalance, portfolio.quoteToken.balance.decimals)} ($${Number(portfolio.quoteToken.valueUsd) / 1e8})`);
-            console.log(`    EVM: ${ethers.formatUnits(portfolio.quoteToken.balance.evmBalance, portfolio.quoteToken.balance.decimals)}`);
-            console.log(`    Core: ${ethers.formatUnits(portfolio.quoteToken.balance.coreBalance, portfolio.quoteToken.balance.decimals)}`);
-            console.log(`  Total Value: $${Number(portfolio.totalValueUsd) / 1e8}`);
+
+            // Base token
+            const baseDecimals = Number(portfolio.baseToken.balance.decimals);
+            const baseBalance = Number(portfolio.baseToken.balance.totalBalance) / (10 ** baseDecimals);
+            const baseEvmBalance = Number(portfolio.baseToken.balance.evmBalance) / (10 ** baseDecimals);
+            const baseCoreBalance = Number(portfolio.baseToken.balance.coreBalance) / (10 ** baseDecimals);
+
+            console.log(`  Base (${target.base_token}): ${baseBalance.toFixed(8)} ${target.base_token} (${formatUsdValue(portfolio.baseToken.valueUsd)})`);
+            console.log(`    EVM: ${baseEvmBalance.toFixed(8)}`);
+            console.log(`    Core: ${baseCoreBalance.toFixed(8)}`);
+
+            // Quote token  
+            const quoteDecimals = Number(portfolio.quoteToken.balance.decimals);
+            const quoteBalance = Number(portfolio.quoteToken.balance.totalBalance) / (10 ** quoteDecimals);
+            const quoteEvmBalance = Number(portfolio.quoteToken.balance.evmBalance) / (10 ** quoteDecimals);
+            const quoteCoreBalance = Number(portfolio.quoteToken.balance.coreBalance) / (10 ** quoteDecimals);
+
+            console.log(`  Quote (${target.quote_token}): ${quoteBalance.toFixed(6)} ${target.quote_token} (${formatUsdValue(portfolio.quoteToken.valueUsd)})`);
+            console.log(`    EVM: ${quoteEvmBalance.toFixed(6)}`);
+            console.log(`    Core: ${quoteCoreBalance.toFixed(6)}`);
+
+            console.log(`  Total Value: ${formatUsdValue(portfolio.totalValueUsd)}`);
             console.log(`  Allocations: ${portfolio.baseAllocationPercent.toFixed(2)}% Base / ${portfolio.quoteAllocationPercent.toFixed(2)}% Quote`);
-            
+
             // Analyze rebalancing need
             const decision = await monitor.analyzeRebalanceNeed(target);
-            
+
             if (decision.needsRebalance) {
-                console.log(`⚠️  REBALANCING NEEDED: ${decision.reason}`);
-                console.log(`  ${target.statistical_arb ? 'Statistical Arb' : 'Simple Bridge'} strategy will:`);
-                if (decision.tokenToSell && decision.tokenToBuy && decision.amountToRebalance) {
-                    console.log(`  - Sell: ${decision.amountToRebalance} of ${decision.tokenToSell}`);
-                    console.log(`  - Buy: ${decision.tokenToBuy}`);
-                    console.log(`  - Value: $${Number(decision.expectedValueUsd || 0n) / 1e8}`);
+                console.log(`\n⚠️  REBALANCING NEEDED`);
+                console.log(`    Reason: ${decision.reason}`);
+                console.log(`    Strategy: ${target.statistical_arb ? 'Statistical Arbitrage' : 'Simple Bridge'}`);
+                if (decision.expectedValueUsd) {
+                    const usdValue = Number(decision.expectedValueUsd) / 1e8;
+                    console.log(`    Trade Value: $${usdValue.toFixed(2)}`);
                 }
-                
+
                 // Execute rebalancing with gas configuration
-                console.log(`🚀 EXECUTING REBALANCING...`);
-                
+                console.log(`\n🚀 EXECUTING REBALANCING...`);
+
                 // Gas configuration - could be made configurable via environment variables
                 const gasConfig = {
                     maxGasPriceGwei: Number(process.env.MAX_GAS_PRICE_GWEI) || 50, // Default 50 gwei
                     nativeHypeReserve: Number(process.env.NATIVE_HYPE_RESERVE) || 0.1 // Default 0.1 HYPE
                 };
-                
+
                 console.log(`⛽ Gas Config: Max ${gasConfig.maxGasPriceGwei} gwei, Reserve ${gasConfig.nativeHypeReserve} HYPE`);
-                
+
                 const result = await monitor.performCompleteRebalancing(target, gasConfig);
-                
+
                 if (result.success) {
-                    console.log(`✅ REBALANCING COMPLETED SUCCESSFULLY!`);
+                    console.log(`\n✅ REBALANCING SUCCESSFUL`);
                     if (result.hash) {
-                        console.log(`  📝 Transaction Hash: ${result.hash}`);
-                        console.log(`  🔗 Explorer: https://hyperevmscan.io/tx/${result.hash}`);
+                        console.log(`    Transaction: ${result.hash}`);
+                        console.log(`    Explorer: https://hyperevmscan.io/tx/${result.hash}`);
                     }
-                    if (result.decision) {
+                    if (result.decision && result.decision.expectedValueUsd) {
                         const strategy = target.statistical_arb ? 'Statistical Arbitrage' : 'Simple Bridge';
-                        console.log(`  📈 Strategy: ${strategy}`);
-                        console.log(`  💰 Value: $${Number(result.decision.expectedValueUsd || 0n) / 1e8}`);
+                        const usdValue = Number(result.decision.expectedValueUsd) / 1e8;
+                        console.log(`    Strategy: ${strategy}`);
+                        console.log(`    Trade Value: $${usdValue.toFixed(2)}`);
                     }
-                    console.log(`  ⛽ Gas Price: ${result.gasPrice} gwei`);
+                    if (result.gasPrice) {
+                        console.log(`    Gas Price: ${result.gasPrice?.toFixed(2)} gwei`);
+                    }
                     if (result.whypeUnwrapped) {
-                        console.log(`  🔄 WHYPE Unwrapped for gas: Yes`);
+                        console.log(`    WHYPE Unwrapped: Yes`);
                     }
                 } else {
-                    console.log(`❌ REBALANCING FAILED: ${result.error}`);
+                    console.log(`\n❌ REBALANCING FAILED`);
+                    console.log(`    Error: ${result.error}`);
                     if (result.gasPrice) {
-                        console.log(`  ⛽ Gas Price: ${result.gasPrice} gwei`);
+                        console.log(`    Gas Price: ${result.gasPrice?.toFixed(2)} gwei`);
                     }
                     if (result.decision) {
-                        console.log(`  📊 Decision: ${result.decision.reason}`);
+                        console.log(`    Decision: ${result.decision.reason}`);
                     }
-                    
+
                     // Specific error handling for common issues
                     if (result.error?.includes('gas price too high')) {
                         console.log(`  ⏳ Suggestion: Wait for lower gas prices or increase MAX_GAS_PRICE_GWEI`);
@@ -449,10 +496,10 @@ class HyperArbManager {
             } else {
                 console.log(`✅ No rebalancing needed: ${decision.reason}`);
             }
-            
+
         } catch (error: any) {
             console.error(`❌ Production monitoring error: ${error.message}`);
-            
+
             // If it's a gas price error, log it but don't fail the entire monitoring
             if (error.message.includes('gas price too high')) {
                 console.log(`⏳ Waiting for lower gas prices...`);

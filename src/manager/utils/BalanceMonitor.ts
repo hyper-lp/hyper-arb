@@ -30,16 +30,39 @@ const ERC20_ABI = [
     "function transfer(address to, uint256 amount) external returns (bool)"
 ];
 
+// Helper functions for clean display formatting
+function formatTokenAmount(amount: bigint, decimals: number, symbol: string): string {
+    const decimalNum = Number(decimals);
+    const formatted = Number(amount) / (10 ** decimalNum);
+    const precision = decimalNum <= 6 ? 6 : 8;
+    return `${formatted.toFixed(precision)} ${symbol}`;
+}
+
+function formatUsdValue(amount: bigint): string {
+    const usd = Number(amount) / 1e8;
+    return `$${usd.toFixed(2)}`;
+}
+
+function formatTokenSymbol(address: string): string {
+    const symbolMap: Record<string, string> = {
+        '0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463': 'BTC',
+        '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb': 'USDT',
+        '0x5555555555555555555555555555555555555555': 'wHYPE',
+        '0x2222222222222222222222222222222222222222': 'HYPE'
+    };
+    return symbolMap[address] || address.slice(0, 8) + '...';
+}
+
 export class BalanceMonitor {
-    private provider: ethers.Provider;
+    private readProvider: ethers.Provider;
     private signer: ethers.Signer;
     private precompileUtils: PrecompileUtils;
     private whypeContract: ethers.Contract;
 
-    constructor(provider: ethers.Provider, signer: ethers.Signer) {
-        this.provider = provider;
+    constructor(readProvider: ethers.Provider, signer: ethers.Signer) {
+        this.readProvider = readProvider;
         this.signer = signer;
-        this.precompileUtils = new PrecompileUtils(provider);
+        this.precompileUtils = new PrecompileUtils(readProvider);
         this.whypeContract = new ethers.Contract(
             '0x5555555555555555555555555555555555555555',
             WHYPE_ABI,
@@ -114,17 +137,17 @@ export class BalanceMonitor {
         try {
             // Handle WHYPE token - in statistical arb mode, only count WHYPE balance
             if (tokenAddress === '0x5555555555555555555555555555555555555555') {
-                const whypeContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.provider);
+                const whypeContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.readProvider);
                 return await whypeContract.balanceOf(walletAddress);
             }
 
             // Handle native HYPE balance - only used for non-statistical arb or gas calculations
             if (tokenAddress === '0x2222222222222222222222222222222222222222') {
-                return await this.provider.getBalance(walletAddress);
+                return await this.readProvider.getBalance(walletAddress);
             }
 
             // Handle other ERC20 tokens
-            const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.provider);
+            const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.readProvider);
             return await tokenContract.balanceOf(walletAddress);
         } catch (error) {
             console.warn(`Failed to get EVM balance for ${tokenAddress}: ${error}`);
@@ -168,7 +191,7 @@ export class BalanceMonitor {
                 return 18;
             }
 
-            const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.provider);
+            const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, this.readProvider);
             return await tokenContract.decimals();
         } catch (error) {
             // Default to 18 decimals if we can't determine
@@ -453,7 +476,7 @@ export class BalanceMonitor {
             const walletAddress = await this.signer.getAddress();
 
             const [hypeBalance, whypeBalance] = await Promise.all([
-                this.provider.getBalance(walletAddress),
+                this.readProvider.getBalance(walletAddress),
                 this.whypeContract.balanceOf(walletAddress)
             ]);
 
@@ -488,7 +511,7 @@ export class BalanceMonitor {
             const walletAddress = await this.signer.getAddress();
 
             const [hypeBalance, whypeBalance] = await Promise.all([
-                this.provider.getBalance(walletAddress),
+                this.readProvider.getBalance(walletAddress),
                 this.whypeContract.balanceOf(walletAddress)
             ]);
 
@@ -547,6 +570,8 @@ export class BalanceMonitor {
         error?: string;
         strategyUsed?: string;
     }> {
+        // Get portfolio snapshot for decimal information
+        const portfolio = await this.getPortfolioSnapshot(target);
         try {
             if (!decision.tokenToSell || !decision.tokenToBuy || !decision.amountToRebalance) {
                 return {
@@ -563,19 +588,25 @@ export class BalanceMonitor {
             // Goal: Achieve 50-50 balance on EVM
 
             const coreWriterUtils = await import('./CoreWriterUtils.js').then(m => m.CoreWriterUtils);
-            const coreWriter = new coreWriterUtils(this.provider, this.signer);
+            const coreWriter = new coreWriterUtils(this.readProvider, this.signer);
 
-            console.log(`Statistical arbitrage rebalancing:`);
-            console.log(`  - Selling: ${decision.tokenToSell} (${decision.amountToRebalance} units)`);
-            console.log(`  - Buying: ${decision.tokenToBuy}`);
-            console.log(`  - Expected Value: $${Number(decision.expectedValueUsd || 0n) / 1e8}`);
+            console.log(`🔄 Statistical Arbitrage Rebalancing`);
+            const sellSymbol = formatTokenSymbol(decision.tokenToSell);
+            const buySymbol = formatTokenSymbol(decision.tokenToBuy);
+            const sellDecimals = decision.tokenToSell === target.base_token_address ?
+                portfolio.baseToken.balance.decimals : portfolio.quoteToken.balance.decimals;
+
+            console.log(`  📤 Sell: ${formatTokenAmount(decision.amountToRebalance, sellDecimals, sellSymbol)}`);
+            console.log(`  📥 Buy:  ${buySymbol}`);
+            console.log(`  💰 Value: ${formatUsdValue(decision.expectedValueUsd || 0n)}`);
 
             // Step 1: Handle WHYPE unwrapping if selling WHYPE, then bridge to HyperCore
             let actualTokenToBridge = decision.tokenToSell;
             let actualAmountToBridge = decision.amountToRebalance;
 
             if (decision.tokenToSell === '0x5555555555555555555555555555555555555555') {
-                console.log(`Step 1a: Unwrapping ${decision.amountToRebalance} WHYPE to HYPE for bridging...`);
+                const whypeAmount = formatTokenAmount(decision.amountToRebalance, 18, 'wHYPE');
+                console.log(`\n  🔄 Step 1a: Unwrapping ${whypeAmount} to HYPE...`);
 
                 const unwrapResult = await this.unwrapWhype(decision.amountToRebalance);
                 if (!unwrapResult.success) {
@@ -590,10 +621,15 @@ export class BalanceMonitor {
                 // Now bridge the unwrapped HYPE (native HYPE address)
                 actualTokenToBridge = '0x2222222222222222222222222222222222222222';
                 actualAmountToBridge = decision.amountToRebalance; // Same amount, just unwrapped
-                console.log(`   WHYPE unwrapped to HYPE: ${unwrapResult.hash}`);
+                console.log(`     ✅ Unwrap completed`);
             }
 
-            console.log(`Step 1b: Bridging ${actualAmountToBridge} tokens to HyperCore...`);
+            const bridgeSymbol = formatTokenSymbol(actualTokenToBridge);
+            const bridgeDecimals = actualTokenToBridge === target.base_token_address ?
+                portfolio.baseToken.balance.decimals : portfolio.quoteToken.balance.decimals;
+            const bridgeAmount = formatTokenAmount(actualAmountToBridge, bridgeDecimals, bridgeSymbol);
+
+            console.log(`\n  🌉 Step 1: Bridging ${bridgeAmount} to HyperCore...`);
             const bridgeToResult = await coreWriter.bridgeToCore({
                 token: actualTokenToBridge,
                 amount: actualAmountToBridge
@@ -608,34 +644,139 @@ export class BalanceMonitor {
                 };
             }
 
-            // Step 2: Execute swap on HyperCore using USDC intermediate
-            console.log(`Step 2: Executing swap on HyperCore...`);
-            let swapResult;
+            // Step 2: Execute two-stage swap on HyperCore through USDC intermediate
+            console.log(`\n  🔄 Step 2: Two-Stage HyperCore Swap`);
+
+            let finalSwapResult: any;
+            let intermediateAmount: bigint = 0n;
+
             if (decision.tokenToSell === target.quote_token_address) {
-                // Selling quote token (USDT) for base token
-                swapResult = await coreWriter.swapUsdcToAsset({
-                    token: decision.tokenToBuy,
+                // Selling quote token (USDT) for base token (BTC) - requires two-stage swap: USDT → USDC → BTC
+                console.log(`     📊 Stage A: ${formatTokenSymbol(actualTokenToBridge)} → USDC`);
+
+                // Stage 1: USDT → USDC
+                const usdtToUsdcResult = await coreWriter.swapAssetToUsdc({
+                    token: actualTokenToBridge, // USDT token address
                     amount: actualAmountToBridge
                 });
+
+                if (!usdtToUsdcResult.success) {
+                    return {
+                        success: false,
+                        error: `USDT → USDC swap failed: ${usdtToUsdcResult.error}`,
+                        hash: usdtToUsdcResult.hash,
+                        strategyUsed: 'statistical-arb'
+                    };
+                }
+
+                console.log(`        ✅ Stage A completed`);
+                console.log(`        ⏳ Checking received amount...`);
+                await new Promise(resolve => setTimeout(resolve, 8000)); // Wait like in the test
+
+                // Get USDC balance to determine actual received amount
+                const userAddress = await this.signer.getAddress();
+                try {
+                    const usdcBalance = await this.precompileUtils.getSpotBalanceByIndex(userAddress, 0n); // USDC is index 0
+                    intermediateAmount = usdcBalance.total;
+                    const usdcFormatted = formatTokenAmount(intermediateAmount, 8, 'USDC'); // HyperCore uses 8 decimals
+                    console.log(`        💰 Received: ${usdcFormatted}`);
+                } catch (error) {
+                    console.log(`        ⚠️ Could not verify USDC balance, using expected amount`);
+                    intermediateAmount = usdtToUsdcResult.expectedAmount || actualAmountToBridge;
+                }
+
+                if (intermediateAmount <= 0n) {
+                    return {
+                        success: false,
+                        error: `No USDC received from first stage swap`,
+                        hash: usdtToUsdcResult.hash,
+                        strategyUsed: 'statistical-arb'
+                    };
+                }
+
+                // Stage 2: USDC → BTC
+                console.log(`     📊 Stage B: USDC → ${formatTokenSymbol(decision.tokenToBuy)}`);
+                // Convert USDC amount from HyperCore format (8 decimals) to EVM format (6 decimals for USDC)
+                const usdcToSwapEvm = (intermediateAmount * 10n ** 6n) / (10n ** 8n);
+
+                finalSwapResult = await coreWriter.swapUsdcToAsset({
+                    token: decision.tokenToBuy, // BTC token address
+                    amount: usdcToSwapEvm
+                });
+
             } else {
-                // Selling base token for quote token (USDT)
-                swapResult = await coreWriter.swapAssetToUsdc({
-                    token: actualTokenToBridge, // Use the actual bridged token (HYPE if unwrapped from WHYPE)
+                // Selling base token (BTC) for quote token (USDT) - requires two-stage swap: BTC → USDC → USDT
+                console.log(`     📊 Stage A: ${formatTokenSymbol(actualTokenToBridge)} → USDC`);
+
+                // Stage 1: BTC → USDC
+                const assetToUsdcResult = await coreWriter.swapAssetToUsdc({
+                    token: actualTokenToBridge, // BTC or HYPE token address
                     amount: actualAmountToBridge
+                });
+
+                if (!assetToUsdcResult.success) {
+                    return {
+                        success: false,
+                        error: `${decision.tokenToSell} → USDC swap failed: ${assetToUsdcResult.error}`,
+                        hash: assetToUsdcResult.hash,
+                        strategyUsed: 'statistical-arb'
+                    };
+                }
+
+                console.log(`        ✅ Stage A completed`);
+                console.log(`        ⏳ Checking received amount...`);
+                await new Promise(resolve => setTimeout(resolve, 8000)); // Wait like in the test
+
+                // Get USDC balance to determine actual received amount
+                const userAddress = await this.signer.getAddress();
+                try {
+                    const usdcBalance = await this.precompileUtils.getSpotBalanceByIndex(userAddress, 0n); // USDC is index 0
+                    intermediateAmount = usdcBalance.total;
+                    const usdcFormatted = formatTokenAmount(intermediateAmount, 8, 'USDC'); // HyperCore uses 8 decimals
+                    console.log(`        💰 Received: ${usdcFormatted}`);
+                } catch (error) {
+                    console.log(`        ⚠️ Could not verify USDC balance, using expected amount`);
+                    intermediateAmount = assetToUsdcResult.expectedAmount || actualAmountToBridge;
+                }
+
+                if (intermediateAmount <= 0n) {
+                    return {
+                        success: false,
+                        error: `No USDC received from first stage swap`,
+                        hash: assetToUsdcResult.hash,
+                        strategyUsed: 'statistical-arb'
+                    };
+                }
+
+                // Stage 2: USDC → USDT
+                console.log(`     📊 Stage B: USDC → ${formatTokenSymbol(decision.tokenToBuy)}`);
+                // Convert USDC amount from HyperCore format (8 decimals) to EVM format (6 decimals for USDC)
+                const usdcToSwapEvm = (intermediateAmount * 10n ** 6n) / (10n ** 8n);
+
+                finalSwapResult = await coreWriter.swapUsdcToAsset({
+                    token: decision.tokenToBuy, // USDT token address
+                    amount: usdcToSwapEvm
                 });
             }
 
-            if (!swapResult.success) {
+            if (!finalSwapResult.success) {
                 return {
                     success: false,
-                    error: `HyperCore swap failed: ${swapResult.error}`,
-                    hash: swapResult.hash,
+                    error: `Second stage HyperCore swap failed: ${finalSwapResult.error}`,
+                    hash: finalSwapResult.hash,
                     strategyUsed: 'statistical-arb'
                 };
             }
 
+            console.log(`        ✅ Stage B completed`);
+            console.log(`        ⏳ Finalizing swap execution...`);
+            await new Promise(resolve => setTimeout(resolve, 8000)); // Wait like in the test
+
+            // Use the final swap result for the rest of the process
+            const swapResult = finalSwapResult;
+
             // Step 3: Wait for swap completion, then bridge results back to EVM
-            console.log(`Step 3: Checking swap completion...`);
+            console.log(`\n  ✔️  Step 3: Verifying swap completion...`);
 
             // Check if swap completed and get the actual received amount
             const swapStatus = await coreWriter.checkSwapCompleted(
@@ -653,12 +794,22 @@ export class BalanceMonitor {
             }
 
             // Step 4: Bridge the swapped tokens back from HyperCore → EVM
-            const receivedAmount = swapStatus.actualAmount || swapResult.expectedAmount || 0n;
-            console.log(`Step 4: Bridging ${receivedAmount} tokens back to EVM...`);
+            const receivedAmountCore = swapStatus.actualAmount || swapResult.expectedAmount || 0n;
+
+            // CRITICAL FIX: Convert from HyperCore wei format to EVM format
+            // checkSwapCompleted returns balance.total which is in HyperCore wei format (8 decimals)
+            // but bridgeToEvm expects EVM format and will convert it back to HyperCore wei format
+            const receivedAmountEvm = await this.precompileUtils.weiToEvm(decision.tokenToBuy, receivedAmountCore);
+
+            const buyDecimals = decision.tokenToBuy === target.base_token_address ?
+                portfolio.baseToken.balance.decimals : portfolio.quoteToken.balance.decimals;
+            const receivedFormatted = formatTokenAmount(receivedAmountCore, 8, formatTokenSymbol(decision.tokenToBuy)); // Use 8 for HyperCore display
+
+            console.log(`\n  🌉 Step 4: Bridging ${receivedFormatted} back to EVM...`);
 
             const bridgeBackResult = await coreWriter.bridgeToEvm({
                 token: decision.tokenToBuy,
-                amount: receivedAmount,
+                amount: receivedAmountEvm, // Use EVM format amount
                 to: await this.signer.getAddress()
             });
 
@@ -675,14 +826,13 @@ export class BalanceMonitor {
             let finalHash = bridgeBackResult.hash;
             if (decision.tokenToBuy === '0x2222222222222222222222222222222222222222' &&
                 target.base_token === 'wHYPE') {
-                console.log(`Step 5: Wrapping exactly ${receivedAmount} received HYPE to WHYPE for trading...`);
+                console.log(`Step 5: Wrapping exactly ${formatTokenAmount(receivedAmountCore, 8, 'HYPE')} received HYPE to WHYPE for trading...`);
 
-                // Convert core wei back to EVM format for wrapping
-                const evmAmount = await this.precompileUtils.weiToEvm(decision.tokenToBuy, receivedAmount);
-                const wrapResult = await this.wrapWhype(evmAmount);
+                // Use the EVM amount we already calculated for wrapping (receivedAmountEvm is already in EVM format)
+                const wrapResult = await this.wrapWhype(receivedAmountEvm);
 
                 if (wrapResult.success && wrapResult.hash) {
-                    console.log(`   ${receivedAmount} HYPE wrapped to WHYPE: ${wrapResult.hash}`);
+                    console.log(`   ${formatTokenAmount(receivedAmountEvm, 18, 'HYPE')} wrapped to WHYPE: ${wrapResult.hash}`);
                     finalHash = wrapResult.hash; // Use wrap transaction as final hash
                 } else {
                     console.warn(`   Warning: Failed to wrap HYPE to WHYPE: ${wrapResult.error}`);
@@ -690,8 +840,7 @@ export class BalanceMonitor {
                 }
             }
 
-            console.log(`✅ Statistical arbitrage completed successfully!`);
-            console.log(`   Final transaction: ${finalHash}`);
+            console.log(`\n✅ Statistical Arbitrage Complete!`);
 
             return {
                 success: true,
@@ -718,6 +867,8 @@ export class BalanceMonitor {
         error?: string;
         strategyUsed?: string;
     }> {
+        // Get portfolio snapshot for decimal information
+        const portfolio = await this.getPortfolioSnapshot(target);
         try {
             if (!decision.additionalData) {
                 return {
@@ -745,7 +896,7 @@ export class BalanceMonitor {
             }
 
             const coreWriterUtils = await import('./CoreWriterUtils.js').then(m => m.CoreWriterUtils);
-            const coreWriter = new coreWriterUtils(this.provider, this.signer);
+            const coreWriter = new coreWriterUtils(this.readProvider, this.signer);
 
             console.log('Simple rebalancing: multi-directional bridge strategy');
             console.log(`Base token: ${ethers.formatEther(baseBridgeToCore)} EVM→Core, ${ethers.formatEther(baseBridgeToEvm)} Core→EVM`);
@@ -912,7 +1063,7 @@ export class BalanceMonitor {
      */
     async getCurrentGasPriceGwei(): Promise<number> {
         try {
-            const feeData = await this.provider.getFeeData();
+            const feeData = await this.readProvider.getFeeData();
             const gasPrice = feeData.gasPrice || 0n;
             return Number(gasPrice) / 1e9; // Convert wei to gwei
         } catch (error) {

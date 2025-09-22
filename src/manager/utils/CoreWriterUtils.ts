@@ -61,16 +61,16 @@ export interface SwapStatus {
 }
 
 export class CoreWriterUtils {
-    private provider: ethers.Provider;
+    private readProvider: ethers.Provider;
     private signer: ethers.Signer;
     private coreWriter: ethers.Contract;
     private precompileUtils: PrecompileUtils;
 
-    constructor(provider: ethers.Provider, signer: ethers.Signer) {
-        this.provider = provider;
+    constructor(readProvider: ethers.Provider, signer: ethers.Signer) {
+        this.readProvider = readProvider;
         this.signer = signer;
         this.coreWriter = new ethers.Contract(CORE_WRITER_ADDRESS, CORE_WRITER_ABI, signer);
-        this.precompileUtils = new PrecompileUtils(provider);
+        this.precompileUtils = new PrecompileUtils(readProvider);
     }
 
     /**
@@ -249,7 +249,7 @@ export class CoreWriterUtils {
      * Check if token is HYPE based on HLConstants.isHype() logic
      */
     private async isHype(tokenIndex: number): Promise<boolean> {
-        const network = await this.provider.getNetwork();
+        const network = await this.readProvider.getNetwork();
         const chainId = network.chainId;
 
         // From HLConstants.hypeTokenIndex()
@@ -278,7 +278,7 @@ export class CoreWriterUtils {
     async checkHypeBalance(requiredGas: bigint): Promise<boolean> {
         try {
             const signerAddress = await this.signer.getAddress();
-            const balance = await this.provider.getBalance(signerAddress);
+            const balance = await this.readProvider.getBalance(signerAddress);
             return balance >= requiredGas;
         } catch {
             return false;
