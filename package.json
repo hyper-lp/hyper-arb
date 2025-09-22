@@ -11,14 +11,20 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "dotenv": "^17.2.2",
     "ethers": "^6.0.0",
     "toml": "^3.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
   },
-  "keywords": ["arbitrage", "defi", "hyperliquid", "rebalancing"],
+  "keywords": [
+    "arbitrage",
+    "defi",
+    "hyperliquid",
+    "rebalancing"
+  ],
   "author": "HyperArb Team",
   "license": "MIT"
 }

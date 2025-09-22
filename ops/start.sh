@@ -12,6 +12,10 @@ export PROGRAM=$1
 function start() {
     trap '' SIGINT
 
+    source config/.env
+    export WALLET_PUB_KEYS=WALLET_PUB_KEYS
+    export WALLET_PRIVATE_KEYS=WALLET_PRIVATE_KEYS
+
     # ------------- Execute -------------
     if [ "$1" = "test" ]; then
         cargo test -- --nocapture
