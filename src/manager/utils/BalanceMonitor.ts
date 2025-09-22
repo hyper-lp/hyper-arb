@@ -59,7 +59,7 @@ export class BalanceMonitor {
 
         const totalValueUsd = baseTokenBalance.valueUsd + quoteTokenBalance.valueUsd;
 
-        const baseAllocationPercent = totalValueUsd > 0
+        const baseAllocationPercent = totalValueUsd > 0n
             ? Number((baseTokenBalance.valueUsd * 10000n) / totalValueUsd) / 100
             : 0;
 
@@ -88,6 +88,8 @@ export class BalanceMonitor {
         ]);
 
         const totalBalance = evmBalance + coreBalance;
+        // Price is in 8 decimals from HyperCore, totalBalance is in EVM decimals
+        // Result should be in 8-decimal USD format to match HyperCore precision
         const valueUsd = (totalBalance * priceUsd) / (10n ** BigInt(decimals));
 
         return {
@@ -193,6 +195,17 @@ export class BalanceMonitor {
     private async analyzeStatisticalArbRebalance(target: TargetConfig): Promise<RebalanceDecision> {
         const portfolio = await this.getPortfolioSnapshot(target);
 
+        // Guard against zero portfolio value
+        if (portfolio.totalValueUsd === 0n) {
+            return {
+                needsRebalance: false,
+                currentBaseAllocation: portfolio.baseAllocationPercent,
+                currentQuoteAllocation: portfolio.quoteAllocationPercent,
+                threshold: target.disabled_arb_treshold,
+                reason: 'Zero portfolio value - no assets to rebalance'
+            };
+        }
+
         // Check if either allocation is below the threshold percentage
         const threshold = target.disabled_arb_treshold;
         const needsRebalance =
@@ -225,6 +238,7 @@ export class BalanceMonitor {
             const excessBaseValue = portfolio.baseToken.valueUsd - targetBaseValue;
 
             const basePrice = portfolio.baseToken.priceUsd;
+            // excessBaseValue is 8-decimal USD, basePrice is 8-decimal, need token amount in EVM decimals  
             amountToRebalance = (excessBaseValue * (10n ** BigInt(portfolio.baseToken.balance.decimals))) / basePrice;
         } else {
             tokenToSell = target.quote_token_address;
@@ -235,6 +249,7 @@ export class BalanceMonitor {
             const excessQuoteValue = portfolio.quoteToken.valueUsd - targetQuoteValue;
 
             const quotePrice = portfolio.quoteToken.priceUsd;
+            // excessQuoteValue is 8-decimal USD, quotePrice is 8-decimal, need token amount in EVM decimals
             amountToRebalance = (excessQuoteValue * (10n ** BigInt(portfolio.quoteToken.balance.decimals))) / quotePrice;
         }
 
@@ -253,7 +268,10 @@ export class BalanceMonitor {
             };
         }
 
-        const rebalanceValueUsd = (amountToRebalance * (tokenToSell === target.base_token_address ? portfolio.baseToken.priceUsd : portfolio.quoteToken.priceUsd)) / (10n ** 8n);
+        // Calculate USD value: token_amount_EVM_decimals * price_8_decimals / 10^EVM_decimals = value_8_decimal_USD
+        const tokenPrice = tokenToSell === target.base_token_address ? portfolio.baseToken.priceUsd : portfolio.quoteToken.priceUsd;
+        const tokenDecimals = tokenToSell === target.base_token_address ? portfolio.baseToken.balance.decimals : portfolio.quoteToken.balance.decimals;
+        const rebalanceValueUsd = (amountToRebalance * tokenPrice) / (10n ** BigInt(tokenDecimals));
         const minTradeValueUsd = BigInt(Math.floor(target.min_trade_value_usd * 1e8));
 
         if (rebalanceValueUsd < minTradeValueUsd) {
@@ -285,6 +303,17 @@ export class BalanceMonitor {
      */
     private async analyzeSimpleRebalance(target: TargetConfig): Promise<RebalanceDecision> {
         const portfolio = await this.getPortfolioSnapshot(target);
+
+        // Guard against zero portfolio value
+        if (portfolio.totalValueUsd === 0n) {
+            return {
+                needsRebalance: false,
+                currentBaseAllocation: portfolio.baseAllocationPercent,
+                currentQuoteAllocation: portfolio.quoteAllocationPercent,
+                threshold: target.disabled_arb_treshold,
+                reason: 'Zero portfolio value - no assets to rebalance'
+            };
+        }
 
         // Check if either allocation is below the threshold percentage
         const threshold = target.disabled_arb_treshold;
@@ -544,10 +573,10 @@ export class BalanceMonitor {
             // Step 1: Handle WHYPE unwrapping if selling WHYPE, then bridge to HyperCore
             let actualTokenToBridge = decision.tokenToSell;
             let actualAmountToBridge = decision.amountToRebalance;
-            
+
             if (decision.tokenToSell === '0x5555555555555555555555555555555555555555') {
                 console.log(`Step 1a: Unwrapping ${decision.amountToRebalance} WHYPE to HYPE for bridging...`);
-                
+
                 const unwrapResult = await this.unwrapWhype(decision.amountToRebalance);
                 if (!unwrapResult.success) {
                     return {
@@ -557,13 +586,13 @@ export class BalanceMonitor {
                         strategyUsed: 'statistical-arb'
                     };
                 }
-                
+
                 // Now bridge the unwrapped HYPE (native HYPE address)
                 actualTokenToBridge = '0x2222222222222222222222222222222222222222';
                 actualAmountToBridge = decision.amountToRebalance; // Same amount, just unwrapped
                 console.log(`   WHYPE unwrapped to HYPE: ${unwrapResult.hash}`);
             }
-            
+
             console.log(`Step 1b: Bridging ${actualAmountToBridge} tokens to HyperCore...`);
             const bridgeToResult = await coreWriter.bridgeToCore({
                 token: actualTokenToBridge,
@@ -644,7 +673,7 @@ export class BalanceMonitor {
 
             // Step 5: If we received HYPE and original target was WHYPE, wrap the exact received amount to WHYPE
             let finalHash = bridgeBackResult.hash;
-            if (decision.tokenToBuy === '0x2222222222222222222222222222222222222222' && 
+            if (decision.tokenToBuy === '0x2222222222222222222222222222222222222222' &&
                 target.base_token === 'wHYPE') {
                 console.log(`Step 5: Wrapping exactly ${receivedAmount} received HYPE to WHYPE for trading...`);
 
