@@ -238,38 +238,6 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         emit CancelLimitOrder(assetId, oid);
     }
 
-    // /**
-    //  * @dev Cancel a limit order by client order ID
-    //  * @param assetId The asset ID
-    //  * @param cloid The client order ID to cancel
-    //  */
-    // function cancelLimitOrderByCloid(
-    //     uint32 assetId,
-    //     uint128 cloid
-    // ) external onlyOwner {
-    //     require(cloid > 0, "Client order ID must be greater than 0");
-
-    //     // Construct the action data for cancel order by cloid (Action ID 11)
-    //     bytes memory encodedAction = abi.encode(assetId, cloid);
-    //     bytes memory data = new bytes(4 + encodedAction.length);
-
-    //     // Version 1
-    //     data[0] = 0x01;
-    //     // Action ID 11 (Cancel order by cloid)
-    //     data[1] = 0x00;
-    //     data[2] = 0x00;
-    //     data[3] = 0x0B; // 0x0B = 11 in decimal
-
-    //     // Copy encoded action data
-    //     for (uint256 i = 0; i < encodedAction.length; i++) {
-    //         data[4 + i] = encodedAction[i];
-    //     }
-
-    //     ICoreWriter(CORE_WRITER).sendRawAction(data);
-
-    //     emit CancelLimitOrderByCloid(assetId, cloid);
-    // }
-
     /**
      * @dev Swap any token for any other token using the router
      * @param tokenIn The input token address (use address(0) for ETH)
