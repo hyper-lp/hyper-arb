@@ -16,6 +16,20 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 // Constants
 const BASIS_POINT_DENO: f64 = 10000.0; // Basis points denominator (1% = 100 bps)
+const INVENTORY_CHECK_INTERVAL_BLOCKS: u64 = 10; // Check inventory every N blocks
+
+// Inventory status for double leg mode
+#[derive(Debug)]
+struct InventoryStatus {
+    base_token: String,
+    quote_token: String,
+    base_balance: f64,
+    quote_balance: f64,
+    base_percentage: f64,
+    quote_percentage: f64,
+    total_value_usd: f64,
+    is_balanced: bool,
+}
 
 // Fetch price based on configured oracle reference
 async fn fetch_price_by_reference(reference: &PriceReference, symbol: &str, config: &BotConfig) -> Result<f64> {
@@ -42,13 +56,122 @@ async fn fetch_price_by_reference(reference: &PriceReference, symbol: &str, conf
     }
 }
 
+// Check inventory balance for double leg mode
+async fn check_inventory_balance<T: Network>(
+    provider: RootProvider<T>,
+    target: &shd::types::ArbTarget,
+    env: &EnvConfig,
+    config: &BotConfig,
+) -> Result<InventoryStatus>
+where
+    RootProvider<T>: Provider + Clone,
+{
+    // Get wallet for this target
+    let wallet = match env.get_signer_for_address(&target.address) {
+        Some(s) => s,
+        None => {
+            return Err(eyre::eyre!("No wallet found for target {}", target.vault_name));
+        }
+    };
+    let wallet_address = wallet.address();
+
+    // Fetch token balances
+    let (base_decimals, quote_decimals, base_balance_raw, quote_balance_raw) = 
+        shd::utils::evm::get_token_info_and_balances(
+            &config.global.rpc_endpoint,
+            &format!("{:?}", wallet_address),
+            &target.base_token_address,
+            &target.quote_token_address,
+        ).await?;
+
+    let base_balance = base_balance_raw as f64 / 10f64.powi(base_decimals as i32);
+    let quote_balance = quote_balance_raw as f64 / 10f64.powi(quote_decimals as i32);
+
+    // Fetch current prices
+    let base_price = fetch_price_by_reference(&target.reference, &target.base_token, config).await?;
+    let quote_price = if target.quote_token.to_uppercase() == "USDT0" || target.quote_token.to_uppercase() == "USDC0" {
+        1.0
+    } else {
+        fetch_price_by_reference(&target.reference, &target.quote_token, config).await?
+    };
+
+    // Calculate USD values
+    let base_value_usd = base_balance * base_price;
+    let quote_value_usd = quote_balance * quote_price;
+    let total_value_usd = base_value_usd + quote_value_usd;
+
+    // Calculate percentages
+    let base_percentage = if total_value_usd > 0.0 {
+        (base_value_usd / total_value_usd) * 100.0
+    } else {
+        0.0
+    };
+    let quote_percentage = if total_value_usd > 0.0 {
+        (quote_value_usd / total_value_usd) * 100.0
+    } else {
+        0.0
+    };
+
+    // Check if inventory is balanced (both tokens between 20-80%)
+    let is_balanced = base_percentage >= 20.0 && base_percentage <= 80.0 &&
+                      quote_percentage >= 20.0 && quote_percentage <= 80.0;
+
+    Ok(InventoryStatus {
+        base_token: target.base_token.clone(),
+        quote_token: target.quote_token.clone(),
+        base_balance,
+        quote_balance,
+        base_percentage,
+        quote_percentage,
+        total_value_usd,
+        is_balanced,
+    })
+}
+
 // --- Main logic ---
-async fn run<T: Network>(config: BotConfig, env: &EnvConfig, provider: RootProvider<T>)
+async fn run<T: Network>(config: BotConfig, env: &EnvConfig, provider: RootProvider<T>, current_block: u64)
 where
     RootProvider<T>: Provider + Clone,
 {
     // For each vault
     for target in &config.targets {
+        // Check inventory balance for double leg mode targets (every N blocks)
+        // Do this BEFORE looking for opportunities to prevent execution if imbalanced
+        if !target.statistical_arb && current_block % INVENTORY_CHECK_INTERVAL_BLOCKS == 0 {
+            match check_inventory_balance(provider.clone(), &target, &env, &config).await {
+                Ok(status) => {
+                    if !status.is_balanced {
+                        tracing::warn!(
+                            "⚠️ INVENTORY IMBALANCE DETECTED in double-leg mode for {} (Block #{}):\n  \
+                            {} balance: {:.6} ({:.1}% of total)\n  \
+                            {} balance: {:.6} ({:.1}% of total)\n  \
+                            Total value: ${:.2} USD\n  \
+                            Skipping arbitrage - waiting for rebalancer algo to operate...",
+                            target.vault_name,
+                            current_block,
+                            status.base_token, status.base_balance, status.base_percentage,
+                            status.quote_token, status.quote_balance, status.quote_percentage,
+                            status.total_value_usd
+                        );
+                        // Skip this target if inventory is imbalanced
+                        continue;
+                    } else {
+                        tracing::info!(
+                            "✅ Inventory balanced for {} (Block #{}): {} {:.1}% / {} {:.1}%",
+                            target.vault_name,
+                            current_block,
+                            status.base_token, status.base_percentage,
+                            status.quote_token, status.quote_percentage
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to check inventory balance for {}: {}. Skipping target.", target.vault_name, e);
+                    continue;
+                }
+            }
+        }
+        
         tracing::info!("Monitoring target: {}", target.format_log_info());
         // Get the wallet signer for this vault address
         let wallet_signer = match env.get_signer_for_address(&target.address) {
@@ -80,6 +203,9 @@ where
         // Track the single best opportunity across all pools
         // (dex, pool, price, spread_bps, fee_bps, net_profit_bps, pool_fee_tier)
         let mut best_opportunity: Option<(String, String, f64, f64, f64, f64, u32)> = None;
+        
+        // For double-leg arb: track all opportunities
+        let mut all_opportunities: Vec<shd::dex::swap::BestOpportunity> = Vec::new();
 
         // >>>>> Hyperswap pools <<<<<
         // tracing::info!("Hyperswap Pools:");
@@ -110,13 +236,12 @@ where
                         let fee_bps = (price.fee as f64) / 100.0; // Convert fee to basis points
                         let net_profit_bps = spread_bps.abs() - fee_bps; // Single fee for one-way trade
 
-                        tracing::info!(
-                            " - {} | Pool: ${:.4} | Ref: ${:.4} | Spread: {:.2} bps | Fee: {:.2} bps | Net: {:.2} bps",
+                        tracing::debug!(
+                            " - {} | Pool: ${:.2} | Ref: ${:.2} | Spread: {:.1} bps | Net: {:.1} bps",
                             &pool_addr_str[..10],
                             pool_price,
                             reference_price,
                             spread_bps,
-                            fee_bps,
                             net_profit_bps
                         );
 
@@ -125,6 +250,19 @@ where
                             if best_opportunity.is_none() || net_profit_bps > best_opportunity.as_ref().unwrap().5 {
                                 best_opportunity = Some(("Hyperswap".to_string(), pool_addr_str.clone(), pool_price, spread_bps, fee_bps, net_profit_bps, price.fee));
                             }
+                        }
+                        
+                        // For double-leg: collect all opportunities
+                        if !target.statistical_arb && target.reference == PriceReference::Hypercore {
+                            all_opportunities.push(shd::dex::swap::BestOpportunity {
+                                dex: "Hyperswap".to_string(),
+                                pool_address: pool_addr_str.clone(),
+                                pool_price,
+                                spread_bps,
+                                fee_bps,
+                                net_profit_bps,
+                                pool_fee_tier: price.fee,
+                            });
                         }
                     }
                     Err(e) => {
@@ -163,13 +301,12 @@ where
                         let fee_bps = (price.fee as f64) / 100.0; // Convert fee to basis points
                         let net_profit_bps = spread_bps.abs() - fee_bps; // Single fee for one-way trade
 
-                        tracing::info!(
-                            " - {} | Pool: ${:.4} | Ref: ${:.4} | Spread: {:.2} bps | Fee: {:.2} bps | Net: {:.2} bps",
+                        tracing::debug!(
+                            " - {} | Pool: ${:.2} | Ref: ${:.2} | Spread: {:.1} bps | Net: {:.1} bps",
                             &pool_addr_str[..10],
                             pool_price,
                             reference_price,
                             spread_bps,
-                            fee_bps,
                             net_profit_bps
                         );
 
@@ -178,6 +315,19 @@ where
                             if best_opportunity.is_none() || net_profit_bps > best_opportunity.as_ref().unwrap().5 {
                                 best_opportunity = Some(("ProjectX".to_string(), pool_addr_str.clone(), pool_price, spread_bps, fee_bps, net_profit_bps, price.fee));
                             }
+                        }
+                        
+                        // For double-leg: collect all opportunities
+                        if !target.statistical_arb && target.reference == PriceReference::Hypercore {
+                            all_opportunities.push(shd::dex::swap::BestOpportunity {
+                                dex: "ProjectX".to_string(),
+                                pool_address: pool_addr_str.clone(),
+                                pool_price,
+                                spread_bps,
+                                fee_bps,
+                                net_profit_bps,
+                                pool_fee_tier: price.fee,
+                            });
                         }
                     }
                     Err(e) => {
@@ -215,10 +365,60 @@ where
                         Ok(_) => tracing::info!("Trade executed successfully"),
                         Err(e) => tracing::error!("Trade execution failed: {}", e),
                     }
+                } else if target.reference == PriceReference::Hypercore {
+                    // Double-leg arbitrage mode (only for Hypercore reference)
+                    tracing::info!("🔄 Double-leg arbitrage mode - preparing parameters");
+                    
+                    // Find best buy opportunity (lowest price) and sell opportunity (highest price)
+                    let buy_opp = all_opportunities.iter()
+                        .min_by(|a, b| a.pool_price.partial_cmp(&b.pool_price).unwrap());
+                    let sell_opp = all_opportunities.iter()
+                        .max_by(|a, b| a.pool_price.partial_cmp(&b.pool_price).unwrap());
+                    
+                    if let (Some(buy), Some(sell)) = (buy_opp, sell_opp) {
+                        // Only proceed if there's a profitable spread
+                        if sell.pool_price > buy.pool_price {
+                            let spread_profit = ((sell.pool_price - buy.pool_price) / buy.pool_price) * BASIS_POINT_DENO;
+                            let total_fees = buy.fee_bps + sell.fee_bps;
+                            let net_profit = spread_profit - total_fees;
+                            
+                            if net_profit >= target.min_executable_spread_bps.abs() {
+                                tracing::info!("Found profitable double-leg opportunity:");
+                                tracing::info!("  Buy on {} at ${:.4}", buy.dex, buy.pool_price);
+                                tracing::info!("  Sell on {} at ${:.4}", sell.dex, sell.pool_price);
+                                tracing::info!("  Spread: {:.2} bps | Fees: {:.2} bps | Net: {:.2} bps", 
+                                    spread_profit, total_fees, net_profit);
+                                
+                                // Prepare double-leg arbitrage
+                                match shd::dex::swap_double_leg::prepare_double_leg_arbitrage(
+                                    provider.clone(),
+                                    buy.clone(),
+                                    sell.clone(),
+                                    &target,
+                                    &env,
+                                    &config,
+                                    reference_price,
+                                ).await {
+                                    Ok((pool_swap, spot_order, double_leg)) => {
+                                        tracing::info!("✅ Double-leg arbitrage prepared successfully");
+                                        tracing::info!("Pool swap params: {:?}", pool_swap);
+                                        tracing::info!("Spot order params: {:?}", spot_order);
+                                        tracing::info!("Expected profit: ${:.2}", double_leg.expected_profit_usd);
+                                        // Contract will use these params to execute atomically
+                                    },
+                                    Err(e) => {
+                                        tracing::error!("Failed to prepare double-leg arbitrage: {}", e);
+                                    }
+                                }
+                            } else {
+                                tracing::info!("Double-leg net profit ({:.2} bps) below threshold", net_profit);
+                            }
+                        }
+                    } else {
+                        tracing::info!("No double-leg opportunities found");
+                    }
                 } else {
-                    // If statistical_arb is false : prepare the order to be exec in the contract
-                    tracing::info!("Contract double-leg arbitrage mode - would prepare contract order");
-                    // TODO: Implement double-leg arb preparation
+                    tracing::info!("Double-leg arbitrage only supported with Hypercore reference");
                 }
             } else {
                 tracing::info!("Net profit ({:.2} bps) below executable threshold ({} bps)", net_profit, target.min_executable_spread_bps.abs());
@@ -250,7 +450,7 @@ where
                         let delta = current - prev;
                         tracing::info!("💎 New block range: [{}, {}] with a delta of {} blocks", prev, current, delta);
                         // --- Main logic ---
-                        let _res = run(config.clone(), &env, provider.clone()).await;
+                        let _res = run(config.clone(), &env, provider.clone(), current).await;
                         // --- End Main logic ---
                         last = Some(current);
                         time = std::time::SystemTime::now();
