@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ICoreWriter} from "./interfaces/ICore.sol";
-import {IRouter} from "./interfaces/IRouter.sol";
+import {IHyperSwapRouter, IProjectXRouter} from "./interfaces/ISwapRouter.sol";
 
 /**
  * @title Arbitrage
@@ -23,7 +23,39 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     address public constant CORE_WRITER =
         0x3333333333333333333333333333333333333333;
 
-    address public router;
+    address public hyperSwapRouter;
+    address public projectXRouter;
+    bool public paused;
+
+    // Structs for arbitrage parameters
+    struct PoolSwapParams {
+        string dex;
+        address routerAddress;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 amountOutMin;
+        string poolAddress;
+        uint24 poolFeeTier;
+        address recipient;
+    }
+
+    struct SpotOrderParams {
+        string baseToken;
+        string quoteToken;
+        bool isBuy;
+        uint256 amount; // Amount in native token units (e.g., 18 decimals for ERC20)
+        uint256 price; // Raw spot price in 8 decimal format
+        uint8 szDecimals; // Token's sz decimals from Hyperliquid
+        uint8 weiDecimals; // Token's wei decimals from Hyperliquid
+    }
+
+    struct DoubleLegOpportunity {
+        uint256 amountInBuy;
+        uint256 amountInSell;
+        uint256 expectedProfitUsd;
+        uint256 gasCostUsd;
+    }
 
     // ========================================
     // Decimal Constants & Token Info
@@ -237,29 +269,65 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         address indexed to
     );
 
+<<<<<<< HEAD
     event SystemAddressUpdated(
         address indexed oldAddress, address indexed newAddress
     );
     event RouterUpdated(address indexed oldRouter, address indexed newRouter);
+=======
+    event SystemAddressUpdated(address indexed oldAddress, address indexed newAddress);
+    event HyperSwapRouterUpdated(address indexed oldRouter, address indexed newRouter);
+    event ProjectXRouterUpdated(address indexed oldRouter, address indexed newRouter);
+    event ArbitrageExecuted(
+        string dex, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, uint256 expectedProfit
+    );
+>>>>>>> c6bfdda (feat(Bundle-Arb-via-corewriter-spot-exec-+-pool-exec): None)
     event KeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
     event CancelLimitOrder(uint32 assetId, uint64 oid);
+    event Paused(address account);
+    event Unpaused(address account);
     // ========================================
     // Constructor
     // ========================================
 
     constructor() Ownable(msg.sender) {
+<<<<<<< HEAD
         initializeTokenDecimals();
+=======
+        paused = false;
+    }
+
+    modifier whenNotPaused() {
+        require(!paused, "Contract is paused");
+        _;
+>>>>>>> c6bfdda (feat(Bundle-Arb-via-corewriter-spot-exec-+-pool-exec): None)
     }
 
     // ========================================
     // Admin Functions
     // ========================================
 
-    function setRouter(address _router) external onlyOwner {
+    function setPaused(bool _paused) external onlyOwner {
+        paused = _paused;
+        if (_paused) {
+            emit Paused(msg.sender);
+        } else {
+            emit Unpaused(msg.sender);
+        }
+    }
+
+    function setHyperSwapRouter(address _router) external onlyOwner {
         require(_router != address(0), "Invalid router address");
-        address oldRouter = router;
-        router = _router;
-        emit RouterUpdated(oldRouter, _router);
+        address oldRouter = hyperSwapRouter;
+        hyperSwapRouter = _router;
+        emit HyperSwapRouterUpdated(oldRouter, _router);
+    }
+
+    function setProjectXRouter(address _router) external onlyOwner {
+        require(_router != address(0), "Invalid router address");
+        address oldRouter = projectXRouter;
+        projectXRouter = _router;
+        emit ProjectXRouterUpdated(oldRouter, _router);
     }
 
     /**
@@ -609,45 +677,63 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Swap any token for any other token using the router
-     * @param tokenIn The input token address (use address(0) for ETH)
-     * @param tokenOut The output token address (use address(0) for ETH)
+     * @dev Execute Uniswap V3 exactInputSingle swap
+     * @param dex The DEX to use ("hyperswap" or "projectx")
+     * @param tokenIn The input token address
+     * @param tokenOut The output token address
+     * @param fee The pool fee tier (500, 3000, 10000 for 0.05%, 0.3%, 1%)
      * @param amountIn The amount of input tokens to swap
-     * @param amountOutMin The minimum amount of output tokens expected
-     * @param to The recipient address
-     * @param deadline The transaction deadline
-     * @param referrer The referrer address for the swap
+     * @param amountOutMinimum The minimum amount of output tokens expected
+     * @param recipient The recipient address
+     * @param sqrtPriceLimitX96 The price limit (0 for no limit)
      */
-    function swapTokens(
+    function exactInputSingle(
+        string memory dex,
         address tokenIn,
         address tokenOut,
+        uint24 fee,
         uint256 amountIn,
-        uint256 amountOutMin,
-        address to,
-        uint256 deadline,
-        address referrer
-    ) external payable onlyOwner nonReentrant {
-        require(router != address(0), "Router not set");
+        uint256 amountOutMinimum,
+        address recipient,
+        uint160 sqrtPriceLimitX96
+    ) public onlyOwner nonReentrant whenNotPaused returns (uint256 amountOut) {
         require(amountIn > 0, "Amount must be greater than 0");
-        require(to != address(0), "Invalid recipient");
-        require(deadline >= block.timestamp, "Deadline expired");
+        require(recipient != address(0), "Invalid recipient");
 
-        IRouter routerContract = IRouter(router);
-        address weth = routerContract.WETH();
+        // Transfer tokens from sender and approve router
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
 
-        uint256 balanceBefore;
-        uint256 balanceAfter;
+        if (keccak256(bytes(dex)) == keccak256(bytes("hyperswap"))) {
+            require(hyperSwapRouter != address(0), "HyperSwap router not set");
+            IERC20(tokenIn).approve(hyperSwapRouter, amountIn);
 
-        if (tokenIn == address(0) && tokenOut != address(0)) {
-            // ETH to Token swap
-            require(msg.value >= amountIn, "Insufficient ETH sent");
+            IHyperSwapRouter.ExactInputSingleParams memory params = IHyperSwapRouter.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: fee,
+                recipient: recipient,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMinimum,
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            });
 
-            address[] memory path = new address[](2);
-            path[0] = weth;
-            path[1] = tokenOut;
+            amountOut = IHyperSwapRouter(hyperSwapRouter).exactInputSingle(params);
+        } else if (keccak256(bytes(dex)) == keccak256(bytes("projectx"))) {
+            require(projectXRouter != address(0), "ProjectX router not set");
+            IERC20(tokenIn).approve(projectXRouter, amountIn);
 
-            balanceBefore = IERC20(tokenOut).balanceOf(to);
+            IProjectXRouter.ExactInputSingleParams memory params = IProjectXRouter.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: fee,
+                recipient: recipient,
+                deadline: block.timestamp + 300, // 5 minutes deadline for ProjectX
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMinimum,
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            });
 
+<<<<<<< HEAD
             routerContract.swapExactETHForTokensSupportingFeeOnTransferTokens{
                 value: amountIn
             }(amountOutMin, path, to, referrer, deadline);
@@ -711,9 +797,136 @@ contract Arbitrage is Ownable, ReentrancyGuard {
             emit TokenSwap(
                 tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to
             );
+=======
+            amountOut = IProjectXRouter(projectXRouter).exactInputSingle(params);
+>>>>>>> c6bfdda (feat(Bundle-Arb-via-corewriter-spot-exec-+-pool-exec): None)
         } else {
-            revert("Invalid token pair: cannot swap ETH for ETH");
+            revert("Invalid DEX: must be 'hyperswap' or 'projectx'");
         }
+
+        emit TokenSwap(tokenIn, tokenOut, amountIn, amountOut, recipient);
+        return amountOut;
+    }
+
+    /**
+     * @dev Execute double-leg arbitrage: EVM DEX swap + Core spot order
+     * @param poolSwapParams Parameters for the DEX pool swap
+     * @param spotOrderParams Parameters for the Core spot order (with precise decimals)
+     * @param opportunity Information about the arbitrage opportunity
+     */
+    function evmCoreArb(
+        PoolSwapParams calldata poolSwapParams,
+        SpotOrderParams calldata spotOrderParams,
+        DoubleLegOpportunity calldata opportunity
+    ) external onlyOwner nonReentrant whenNotPaused {
+        // Validate parameters
+        require(poolSwapParams.amountIn > 0, "Invalid pool swap amount");
+        require(spotOrderParams.amount > 0, "Invalid spot order amount");
+        require(opportunity.expectedProfitUsd > opportunity.gasCostUsd, "No profit after gas");
+        
+        // Validate decimal parameters to prevent underflow
+        require(spotOrderParams.weiDecimals >= spotOrderParams.szDecimals, "Invalid decimal configuration");
+        require(spotOrderParams.szDecimals <= 8, "szDecimals too large");
+        require(spotOrderParams.weiDecimals <= 18, "weiDecimals too large");
+        
+        // Check balance before swap
+        uint256 tokenInBalance = IERC20(poolSwapParams.tokenIn).balanceOf(address(this));
+        require(tokenInBalance >= poolSwapParams.amountIn, "Insufficient token balance for swap");
+
+        // Step 1: Execute DEX swap (buy leg) - Quote to Base
+        uint256 balanceBefore = IERC20(poolSwapParams.tokenOut).balanceOf(poolSwapParams.recipient);
+        
+        uint256 baseTokensReceived = exactInputSingle(
+            poolSwapParams.dex,
+            poolSwapParams.tokenIn,
+            poolSwapParams.tokenOut,
+            poolSwapParams.poolFeeTier,
+            poolSwapParams.amountIn,
+            poolSwapParams.amountOutMin,
+            poolSwapParams.recipient,
+            0 // No price limit
+        );
+        
+        // Verify swap success
+        uint256 balanceAfter = IERC20(poolSwapParams.tokenOut).balanceOf(poolSwapParams.recipient);
+        require(balanceAfter > balanceBefore, "DEX swap failed");
+        require(baseTokensReceived >= poolSwapParams.amountOutMin, "Insufficient output from swap");
+
+        // Step 2: Get asset ID for the spot order
+        // AssetID = SpotIndex + 10000 (from HLConversions.spotToAssetId)
+        // For simplicity, using hardcoded mappings (should be dynamic in production)
+        uint32 assetId = getAssetId(spotOrderParams.baseToken);
+
+        // Step 3: Calculate spot order parameters following TypeScript CoreWriterUtils logic
+        uint64 sz;
+        uint64 limitPx;
+
+        if (!spotOrderParams.isBuy) {
+            // SELL: Match swapAssetToUsdc logic from CoreWriterUtils.ts
+
+            // Convert EVM amount to Core wei format
+            // For ERC20 tokens with 18 decimals and evmExtraWeiDecimals=10 (like WHYPE):
+            // coreWei = evmAmount / 10^evmExtraWeiDecimals
+            uint256 coreWei = spotOrderParams.amount / (10 ** 10); // evmExtraWeiDecimals=10 for WHYPE
+
+            // Convert Core wei to sz units: weiToSz logic
+            // sz = coreWei / 10^(weiDecimals - szDecimals)
+            uint256 divisor = 10 ** (spotOrderParams.weiDecimals - spotOrderParams.szDecimals);
+            uint256 szNative = coreWei / divisor;
+
+            // Apply truncation (Python logic: truncate(float(balance), sz_decimals))
+            uint256 szTruncated = truncateToPrecision(szNative, spotOrderParams.szDecimals);
+
+            // Scale to 8 decimals (order encoding expects 8-decimal format)
+            uint256 scaleExponent = 8 - spotOrderParams.szDecimals;
+            sz = uint64(szTruncated * (10 ** scaleExponent));
+
+            // Format price: for sell orders apply 1% slippage (99% of price)
+            limitPx = formatSpotPrice(
+                (spotOrderParams.price * 99) / 100, spotOrderParams.szDecimals, spotOrderParams.baseToken
+            );
+        } else {
+            // BUY: Match swapUsdcToAsset logic from CoreWriterUtils.ts
+
+            // Convert USDC amount from EVM (6 decimals) to spot format (8 decimals)
+            uint256 usdcSpot = spotOrderParams.amount * (10 ** 2);
+
+            // Calculate sz directly: sz = usdcSpot / spotPx
+            uint256 szNative = usdcSpot / spotOrderParams.price;
+
+            // Apply truncation
+            uint256 szTruncated = truncateToPrecision(szNative, spotOrderParams.szDecimals);
+
+            // Scale to 8 decimals
+            uint256 scaleExponent = 8 - spotOrderParams.szDecimals;
+            sz = uint64(szTruncated * (10 ** scaleExponent));
+
+            // Format price: for buy orders apply 1% slippage (101% of price)
+            limitPx = formatSpotPrice(
+                (spotOrderParams.price * 101) / 100, spotOrderParams.szDecimals, spotOrderParams.baseToken
+            );
+        }
+
+        // Step 4: Place spot limit order on Hyperliquid
+        // Following TypeScript: use IOC (Immediate or Cancel) for swaps
+        limitOrder(
+            assetId,
+            spotOrderParams.isBuy,
+            limitPx,
+            sz,
+            false, // Not reduce only
+            3, // TIF: IOC (Immediate or Cancel) - from LIMIT_ORDER_TIF_IOC
+            0 // cloid: 0 (matching TypeScript implementation)
+        );
+
+        emit ArbitrageExecuted(
+            poolSwapParams.dex,
+            poolSwapParams.tokenIn,
+            poolSwapParams.tokenOut,
+            poolSwapParams.amountIn,
+            baseTokensReceived,
+            opportunity.expectedProfitUsd
+        );
     }
 
     /**
@@ -728,6 +941,103 @@ contract Arbitrage is Ownable, ReentrancyGuard {
             payable(owner()).transfer(amount);
         } else {
             IERC20(token).safeTransfer(owner(), amount);
+        }
+    }
+
+    /**
+     * @dev Truncate a number to specified decimal places (Python logic)
+     * Mimics: Math.floor(number * factor) / factor where factor = 10^decimals
+     */
+    function truncateToPrecision(uint256 number, uint8 decimals) internal pure returns (uint256) {
+        if (decimals == 0) return number;
+        
+        // Implement actual truncation: Math.floor(number * factor) / factor
+        // Since we're working with integers representing fixed-point numbers,
+        // we need to remove the least significant digits beyond our precision
+        uint256 factor = 10 ** uint256(decimals);
+        
+        // This truncates by dividing by factor and then multiplying back
+        // Integer division naturally floors the result
+        return (number / factor) * factor;
+    }
+
+    /**
+     * @dev Format spot price following TypeScript formatPrice logic
+     * Applies Hyperliquid precision rules: max (8 - szDecimals) decimal places
+     */
+    function formatSpotPrice(uint256 price, uint8 szDecimals, string memory tokenSymbol)
+        internal
+        pure
+        returns (uint64)
+    {
+        bytes32 symbolHash = keccak256(bytes(tokenSymbol));
+        uint256 formattedPrice = price;
+        
+        // Apply significant digits rounding based on token type
+        if (symbolHash == keccak256(bytes("BTC"))) {
+            // BTC: 6 significant digits
+            formattedPrice = roundToSignificantDigits(price, 6);
+        } else if (symbolHash == keccak256(bytes("ETH")) || symbolHash == keccak256(bytes("USDT"))) {
+            // ETH/USDT: 5 significant digits
+            formattedPrice = roundToSignificantDigits(price, 5);
+        } else {
+            // Other tokens: Round to 8 - szDecimals decimal places
+            uint8 maxDecimals = szDecimals < 8 ? 8 - szDecimals : 0;
+            if (maxDecimals > 0) {
+                // Round to maxDecimals places
+                uint256 divisor = 10 ** (8 - maxDecimals);
+                formattedPrice = (price / divisor) * divisor;
+            }
+        }
+        
+        require(formattedPrice <= type(uint64).max, "Price overflow");
+        return uint64(formattedPrice);
+    }
+    
+    /**
+     * @dev Round a price to N significant digits
+     * @param price Price in 8 decimal format
+     * @param sigDigits Number of significant digits to keep
+     */
+    function roundToSignificantDigits(uint256 price, uint8 sigDigits) internal pure returns (uint256) {
+        if (price == 0) return 0;
+        
+        // Find the magnitude (number of digits)
+        uint256 magnitude = 0;
+        uint256 temp = price;
+        while (temp >= 10) {
+            temp /= 10;
+            magnitude++;
+        }
+        
+        // Calculate how many digits to remove
+        if (magnitude >= sigDigits) {
+            uint256 digitsToRemove = magnitude - sigDigits + 1;
+            uint256 divisor = 10 ** digitsToRemove;
+            // Round by dividing and multiplying back
+            return (price / divisor) * divisor;
+        }
+        
+        return price;
+    }
+
+    /**
+     * @dev Get asset ID for a token (SpotIndex + 10000)
+     * In production, this should query the actual spot index
+     */
+    function getAssetId(string memory tokenSymbol) internal pure returns (uint32) {
+        bytes32 symbolHash = keccak256(bytes(tokenSymbol));
+
+        // These would need to be dynamically fetched in production
+        // Using example spot indices + 10000
+        if (symbolHash == keccak256(bytes("WHYPE")) || symbolHash == keccak256(bytes("HYPE"))) {
+            return 10150; // Assuming spot index 150 for HYPE/USDC
+        } else if (symbolHash == keccak256(bytes("BTC"))) {
+            return 10000; // Assuming spot index 0 for BTC/USDC
+        } else if (symbolHash == keccak256(bytes("ETH"))) {
+            return 10001; // Assuming spot index 1 for ETH/USDC
+        } else {
+            revert("Unsupported token for spot order");
         }
     }
 

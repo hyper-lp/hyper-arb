@@ -4,9 +4,11 @@ network_name = "hyperevm"
 # RPC endpoint for blockchain transactions and queries
 rpc_endpoint = "https://hlh-builders-jp-mainnet.hyperpc.app?use-upstream=hlnode"
 broadcast_rpc_endpoint = "https://hyperliquid.valtitude.xyz?apiKey=5bc51b42-1575-40ae-998f-81c4ef067f6a"
+# rpc_endpoint = "http://127.0.0.1:8545"
+# broadcast_rpc_endpoint = "http://127.0.0.1:8545"
+
 # rpc_endpoint = "https://rpc.hyperliquid.xyz/evm"
 # rpc_endpoint = "https://hyperliquid-mainnet.g.alchemy.com/v2/T4Jmj7HYUBr1psFAZh415"
-# rpc_endpoint = "http://127.0.0.1:8545"
 # WebSocket endpoint for real-time blockchain events
 websocket_endpoint = "wss://hyperliquid.drpc.org"
 # Hyperliquid API endpoint for trading and market data
@@ -91,38 +93,38 @@ poll_interval_ms = 500
 publish_events = false
 skip_simulation = true
 infinite_approval = true
-reference = "pyth"
-statistical_arb = true
+reference = "hypercore"
+statistical_arb = false
 disabled_arb_treshold = 30
-min_trade_value_usd = 10.0  # Minimum trade value in USD
+min_trade_value_usd = 5.0  # Minimum trade value in USD
 
-[[targets]]
-vault_name = "bravo"
-address = "0xA0839162255038f6330Ec241972fa6a9E457218f"
-base_token = "BTC" # On BTC, never swap less than 20$
-base_token_address = "0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463"
-quote_token = "USDT0"
-quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
+# [[targets]]
+# vault_name = "bravo"
+# address = "0xA0839162255038f6330Ec241972fa6a9E457218f"
+# base_token = "BTC" # On BTC, never swap less than 20$
+# base_token_address = "0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463"
+# quote_token = "USDT0"
+# quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
 
-hyperswap_pools = [
-    "0x7cac5c8ad2fb1216d3f262b2c9cd5548d0329e78" # 0.3% - 362 K$
-    ]
-prjx_pools = [
-    "0xfd0cb41a4a28b5ca13affe65cd5924f461b3c850" # 0.05% - 941 K$
-]
-min_watch_spread_bps = 0.0
-min_executable_spread_bps = -10.0
-max_slippage_pct = 0.0005
-max_inventory_ratio = 0.5
-tx_gas_limit = 300000
-poll_interval_ms = 500
-publish_events = false
-skip_simulation = true
-infinite_approval = true
-reference = "pyth"
-statistical_arb = true
-disabled_arb_treshold = 30
-min_trade_value_usd = 10.0  # Minimum trade value in USD
+# hyperswap_pools = [
+#     "0x7cac5c8ad2fb1216d3f262b2c9cd5548d0329e78" # 0.3% - 362 K$
+#     ]
+# prjx_pools = [
+#     "0xfd0cb41a4a28b5ca13affe65cd5924f461b3c850" # 0.05% - 941 K$
+# ]
+# min_watch_spread_bps = 0.0
+# min_executable_spread_bps = -5.0
+# max_slippage_pct = 0.0005
+# max_inventory_ratio = 0.5
+# tx_gas_limit = 300000
+# poll_interval_ms = 500
+# publish_events = false
+# skip_simulation = true
+# infinite_approval = true
+# reference = "pyth"
+# statistical_arb = true
+# disabled_arb_treshold = 30
+# min_trade_value_usd = 5.0  # Minimum trade value in USD
 
 # [[targets]]
 # vault_name = "charlie"
@@ -138,7 +140,7 @@ min_trade_value_usd = 10.0  # Minimum trade value in USD
 #     "0xaEAE69783e3121196A45f3930fa141f462A4Df2F" # 0.3% - 184 K$
 # ]
 # min_watch_spread_bps = 5.0
-# min_executable_spread_bps = 5.0
+# min_executable_spread_bps = 3.0
 # max_slippage_pct = 0.0005
 # max_inventory_ratio = 0.5
 # tx_gas_limit = 300000
@@ -149,7 +151,7 @@ min_trade_value_usd = 10.0  # Minimum trade value in USD
 # reference = "pyth" # => "hypercore" # "redstone" # "pyth"
 # statistical_arb = true # Can only be false if reference is 'hypercore'
 # disabled_arb_treshold = 30
-# min_trade_value_usd = 10.0  # Minimum trade value in USD
+# min_trade_value_usd = 5.0  # Minimum trade value in USD
 
 
 # [[targets]]
@@ -170,7 +172,7 @@ min_trade_value_usd = 10.0  # Minimum trade value in USD
 #     "0x161fB7d6c764f81DAE581E8a4981772750416727" # 0.3% - 859 K$
 #     ]
 # min_watch_spread_bps = 5.0
-# min_executable_spread_bps = 5.0
+# min_executable_spread_bps = 3.0
 # max_slippage_pct = 0.0005
 # max_inventory_ratio = 0.5
 # tx_gas_limit = 300000

@@ -46,9 +46,9 @@ hyperliquid_rust_sdk = { git = "https://github.com/hyperliquid-dex/hyperliquid-r
 name = "shd"
 path = "src/shd/lib.rs"
 
-[[bin]]
-name = "rebalancer"
-path = "src/rebalancer.rs"
+# [[bin]]
+# name = "rebalancer"
+# path = "src/rebalancer.rs"
 
 [[bin]]
 name = "arbitrager"

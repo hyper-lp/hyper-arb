@@ -10,6 +10,7 @@ CLAUDE.local.md
 *key*
 *token*
 tests
+sol/config/.env.ex
 
 # TypeScript compiled files
 dist/
