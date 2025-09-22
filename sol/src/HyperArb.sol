@@ -7,12 +7,13 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ICoreWriter} from "./interfaces/ICore.sol";
+import {IRouter} from "./interfaces/IRouter.sol";
 
 /**
  * @title Arbitrage
  * @notice Arbitrage contract for HyperLP Protocol
  */
-contract Arbitrage is ERC20, Ownable, ReentrancyGuard {
+contract Arbitrage is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ========================================
@@ -21,8 +22,7 @@ contract Arbitrage is ERC20, Ownable, ReentrancyGuard {
 
     address public constant CORE_WRITER = 0x3333333333333333333333333333333333333333;
 
-    address public systemAddress;
-    address public keeper;
+    address public router;
 
     event BridgeToCore(address token, uint256 amount);
 
@@ -37,24 +37,36 @@ contract Arbitrage is ERC20, Ownable, ReentrancyGuard {
     event APIWalletAdded(address indexed walletAddress, string indexed walletName);
 
     event SpotTransfer(address indexed to, uint64 indexed token, uint64 indexed weiAmount);
+
+    event TokenSwap(
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        address indexed to
+    );
+
+    event SystemAddressUpdated(address indexed oldAddress, address indexed newAddress);
+    event RouterUpdated(address indexed oldRouter, address indexed newRouter);
+    event KeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
+    event CancelLimitOrder(uint32 assetId, uint64 oid);
     // ========================================
     // Constructor
     // ========================================
 
-    constructor(string memory _name, string memory _symbol, address _systemAddress)
-        ERC20(_name, _symbol)
+    constructor()
         Ownable(msg.sender)
-    {
-        systemAddress = _systemAddress;
-    }
+    {}
 
     // ========================================
     // Admin Functions
     // ========================================
 
-    function setSystemAddress(address _systemAddress) external onlyOwner {
-        require(_systemAddress != address(0), "Invalid system address");
-        systemAddress = _systemAddress;
+    function setRouter(address _router) external onlyOwner {
+        require(_router != address(0), "Invalid router address");
+        address oldRouter = router;
+        router = _router;
+        emit RouterUpdated(oldRouter, _router);
     }
 
     /**
@@ -204,6 +216,185 @@ contract Arbitrage is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
+     * @dev Cancel a limit order on the spot market, mostly used for swaping asset to USDC
+     * @param assetId The asset ID
+     * @param oid The order ID
+     */
+    function cancelLimitOrder(
+        uint32 assetId,
+        uint64 oid
+    ) external onlyOwner {
+        require(oid > 0, "Order ID must be greater than 0");
+
+        // Construct the action data for cancel order by oid (Action ID 10)
+        bytes memory encodedAction = abi.encode(assetId, oid);
+        bytes memory data = new bytes(4 + encodedAction.length);
+
+        // Version 1
+        data[0] = 0x01;
+        // Action ID 10 (Cancel order by oid)
+        data[1] = 0x00;
+        data[2] = 0x00;
+        data[3] = 0x0A;
+
+        // Copy encoded action data
+        for (uint256 i = 0; i < encodedAction.length; i++) {
+            data[4 + i] = encodedAction[i];
+        }
+
+        ICoreWriter(CORE_WRITER).sendRawAction(data);
+
+        emit CancelLimitOrder(assetId, oid);
+    }
+
+    /**
+     * @dev Cancel a limit order by client order ID
+     * @param assetId The asset ID
+     * @param cloid The client order ID to cancel
+     */
+    function cancelLimitOrderByCloid(
+        uint32 assetId,
+        uint128 cloid
+    ) external onlyOwner {
+        require(cloid > 0, "Client order ID must be greater than 0");
+
+        // Construct the action data for cancel order by cloid (Action ID 11)
+        bytes memory encodedAction = abi.encode(assetId, cloid);
+        bytes memory data = new bytes(4 + encodedAction.length);
+
+        // Version 1
+        data[0] = 0x01;
+        // Action ID 11 (Cancel order by cloid)
+        data[1] = 0x00;
+        data[2] = 0x00;
+        data[3] = 0x0B; // 0x0B = 11 in decimal
+
+        // Copy encoded action data
+        for (uint256 i = 0; i < encodedAction.length; i++) {
+            data[4 + i] = encodedAction[i];
+        }
+
+        ICoreWriter(CORE_WRITER).sendRawAction(data);
+
+        emit CancelLimitOrderByCloid(assetId, cloid);
+    }
+
+    /**
+     * @dev Swap any token for any other token using the router
+     * @param tokenIn The input token address (use address(0) for ETH)
+     * @param tokenOut The output token address (use address(0) for ETH)
+     * @param amountIn The amount of input tokens to swap
+     * @param amountOutMin The minimum amount of output tokens expected
+     * @param to The recipient address
+     * @param deadline The transaction deadline
+     * @param referrer The referrer address for the swap
+     */
+    function swapTokens(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address to,
+        uint256 deadline,
+        address referrer
+    ) external onlyOwner nonReentrant payable {
+        require(router != address(0), "Router not set");
+        require(amountIn > 0, "Amount must be greater than 0");
+        require(to != address(0), "Invalid recipient");
+        require(deadline >= block.timestamp, "Deadline expired");
+
+        IRouter routerContract = IRouter(router);
+        address weth = routerContract.WETH();
+        
+        uint256 balanceBefore;
+        uint256 balanceAfter;
+        
+        if (tokenIn == address(0) && tokenOut != address(0)) {
+            // ETH to Token swap
+            require(msg.value >= amountIn, "Insufficient ETH sent");
+            
+            address[] memory path = new address[](2);
+            path[0] = weth;
+            path[1] = tokenOut;
+            
+            balanceBefore = IERC20(tokenOut).balanceOf(to);
+            
+            routerContract.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amountIn}(
+                amountOutMin,
+                path,
+                to,
+                referrer,
+                deadline
+            );
+            
+            balanceAfter = IERC20(tokenOut).balanceOf(to);
+            
+            emit TokenSwap(tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to);
+            
+        } else if (tokenIn != address(0) && tokenOut == address(0)) {
+            // Token to ETH swap
+            IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+            IERC20(tokenIn).approve(router, amountIn);
+            
+            address[] memory path = new address[](2);
+            path[0] = tokenIn;
+            path[1] = weth;
+            
+            balanceBefore = to.balance;
+            
+            routerContract.swapExactTokensForETHSupportingFeeOnTransferTokens(
+                amountIn,
+                amountOutMin,
+                path,
+                to,
+                referrer,
+                deadline
+            );
+            
+            balanceAfter = to.balance;
+            
+            emit TokenSwap(tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to);
+            
+        } else if (tokenIn != address(0) && tokenOut != address(0)) {
+            // Token to Token swap
+            IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+            IERC20(tokenIn).approve(router, amountIn);
+            
+            address[] memory path;
+            
+            // Check if we need to route through WETH
+            if (tokenIn == weth || tokenOut == weth) {
+                path = new address[](2);
+                path[0] = tokenIn;
+                path[1] = tokenOut;
+            } else {
+                path = new address[](3);
+                path[0] = tokenIn;
+                path[1] = weth;
+                path[2] = tokenOut;
+            }
+            
+            balanceBefore = IERC20(tokenOut).balanceOf(to);
+            
+            routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                amountIn,
+                amountOutMin,
+                path,
+                to,
+                referrer,
+                deadline
+            );
+            
+            balanceAfter = IERC20(tokenOut).balanceOf(to);
+            
+            emit TokenSwap(tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to);
+            
+        } else {
+            revert("Invalid token pair: cannot swap ETH for ETH");
+        }
+    }
+
+    /**
      * @notice Emergency withdrawal of stuck tokens
      * @dev Only callable by owner in case of emergency
      */
@@ -214,4 +405,6 @@ contract Arbitrage is ERC20, Ownable, ReentrancyGuard {
             IERC20(token).safeTransfer(owner(), amount);
         }
     }
+
+    receive() external payable {}
 }
