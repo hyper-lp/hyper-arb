@@ -56,9 +56,65 @@ async fn fetch_price_by_reference(reference: &PriceReference, symbol: &str, conf
     }
 }
 
+// Helper function to fetch and log current balances
+async fn log_current_balances<T: Network>(
+    _provider: RootProvider<T>,
+    target: &shd::types::ArbTarget,
+    env: &EnvConfig,
+    config: &BotConfig,
+    prefix: &str,
+) -> Result<()>
+where
+    RootProvider<T>: Provider + Clone,
+{
+    // Get wallet for this target
+    let wallet = match env.get_signer_for_address(&target.address) {
+        Some(s) => s,
+        None => {
+            return Err(eyre::eyre!("No wallet found for target {}", target.vault_name));
+        }
+    };
+    let wallet_address = wallet.address();
+
+    // Fetch token balances
+    let (base_decimals, quote_decimals, base_balance_raw, quote_balance_raw) = 
+        shd::utils::evm::get_token_info_and_balances(
+            &config.global.rpc_endpoint,
+            &format!("{:?}", wallet_address),
+            &target.base_token_address,
+            &target.quote_token_address,
+        ).await.map_err(|e| eyre::eyre!(e))?;
+
+    let base_balance = base_balance_raw as f64 / 10f64.powi(base_decimals as i32);
+    let quote_balance = quote_balance_raw as f64 / 10f64.powi(quote_decimals as i32);
+
+    // Fetch current prices
+    let base_price = fetch_price_by_reference(&target.reference, &target.base_token, config).await?;
+    let quote_price = if target.quote_token.to_uppercase() == "USDT0" || target.quote_token.to_uppercase() == "USDC0" {
+        1.0
+    } else {
+        fetch_price_by_reference(&target.reference, &target.quote_token, config).await?
+    };
+
+    // Calculate USD values
+    let base_value_usd = base_balance * base_price;
+    let quote_value_usd = quote_balance * quote_price;
+    let total_value_usd = base_value_usd + quote_value_usd;
+
+    tracing::info!(
+        "💰 {} Balances: {}: {:.6} (${:.2}) | {}: {:.6} (${:.2}) | Total: ${:.2}",
+        prefix,
+        target.base_token, base_balance, base_value_usd,
+        target.quote_token, quote_balance, quote_value_usd,
+        total_value_usd
+    );
+
+    Ok(())
+}
+
 // Check inventory balance for double leg mode
 async fn check_inventory_balance<T: Network>(
-    provider: RootProvider<T>,
+    _provider: RootProvider<T>,
     target: &shd::types::ArbTarget,
     env: &EnvConfig,
     config: &BotConfig,
@@ -82,7 +138,7 @@ where
             &format!("{:?}", wallet_address),
             &target.base_token_address,
             &target.quote_token_address,
-        ).await?;
+        ).await.map_err(|e| eyre::eyre!(e))?;
 
     let base_balance = base_balance_raw as f64 / 10f64.powi(base_decimals as i32);
     let quote_balance = quote_balance_raw as f64 / 10f64.powi(quote_decimals as i32);
@@ -348,6 +404,11 @@ where
                 // If statistical_arb is true : just buy/sell accordingly
                 if target.statistical_arb {
                     tracing::info!("📈 Statistical arbitrage mode - executing trade");
+                    
+                    // Log current balances before trade
+                    if let Err(e) = log_current_balances(provider.clone(), &target, &env, &config, "Pre-Trade").await {
+                        tracing::error!("Failed to log pre-trade balances: {}", e);
+                    }
 
                     // Create BestOpportunity struct
                     let opportunity = shd::dex::swap::BestOpportunity {
@@ -362,7 +423,13 @@ where
 
                     // Execute the swap
                     match shd::dex::swap::execute_statistical_arbitrage(provider.clone(), opportunity, &target, &env, &config, reference_price).await {
-                        Ok(_) => tracing::info!("Trade executed successfully"),
+                        Ok(_) => {
+                            tracing::info!("Trade executed successfully");
+                            // Log new balances after trade
+                            if let Err(e) = log_current_balances(provider.clone(), &target, &env, &config, "Post-Trade").await {
+                                tracing::error!("Failed to log post-trade balances: {}", e);
+                            }
+                        },
                         Err(e) => tracing::error!("Trade execution failed: {}", e),
                     }
                 } else if target.reference == PriceReference::Hypercore {
@@ -404,7 +471,14 @@ where
                                         tracing::info!("Pool swap params: {:?}", pool_swap);
                                         tracing::info!("Spot order params: {:?}", spot_order);
                                         tracing::info!("Expected profit: ${:.2}", double_leg.expected_profit_usd);
+                                        
+                                        // Log current balances before execution
+                                        if let Err(e) = log_current_balances(provider.clone(), &target, &env, &config, "Pre-Double-Leg").await {
+                                            tracing::error!("Failed to log pre-trade balances: {}", e);
+                                        }
+                                        
                                         // Contract will use these params to execute atomically
+                                        // NOTE: When contract execution is implemented, add post-trade balance logging here
                                     },
                                     Err(e) => {
                                         tracing::error!("Failed to prepare double-leg arbitrage: {}", e);

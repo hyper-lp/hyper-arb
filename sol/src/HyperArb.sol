@@ -39,11 +39,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     event SpotTransfer(address indexed to, uint64 indexed token, uint64 indexed weiAmount);
 
     event TokenSwap(
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut,
-        address indexed to
+        address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut, address indexed to
     );
 
     event SystemAddressUpdated(address indexed oldAddress, address indexed newAddress);
@@ -54,9 +50,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     // Constructor
     // ========================================
 
-    constructor()
-        Ownable(msg.sender)
-    {}
+    constructor() Ownable(msg.sender) {}
 
     // ========================================
     // Admin Functions
@@ -220,10 +214,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param assetId The asset ID
      * @param oid The order ID
      */
-    function cancelLimitOrder(
-        uint32 assetId,
-        uint64 oid
-    ) external onlyOwner {
+    function cancelLimitOrder(uint32 assetId, uint64 oid) external onlyOwner {
         require(oid > 0, "Order ID must be greater than 0");
 
         // Construct the action data for cancel order by oid (Action ID 10)
@@ -247,37 +238,37 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         emit CancelLimitOrder(assetId, oid);
     }
 
-    /**
-     * @dev Cancel a limit order by client order ID
-     * @param assetId The asset ID
-     * @param cloid The client order ID to cancel
-     */
-    function cancelLimitOrderByCloid(
-        uint32 assetId,
-        uint128 cloid
-    ) external onlyOwner {
-        require(cloid > 0, "Client order ID must be greater than 0");
+    // /**
+    //  * @dev Cancel a limit order by client order ID
+    //  * @param assetId The asset ID
+    //  * @param cloid The client order ID to cancel
+    //  */
+    // function cancelLimitOrderByCloid(
+    //     uint32 assetId,
+    //     uint128 cloid
+    // ) external onlyOwner {
+    //     require(cloid > 0, "Client order ID must be greater than 0");
 
-        // Construct the action data for cancel order by cloid (Action ID 11)
-        bytes memory encodedAction = abi.encode(assetId, cloid);
-        bytes memory data = new bytes(4 + encodedAction.length);
+    //     // Construct the action data for cancel order by cloid (Action ID 11)
+    //     bytes memory encodedAction = abi.encode(assetId, cloid);
+    //     bytes memory data = new bytes(4 + encodedAction.length);
 
-        // Version 1
-        data[0] = 0x01;
-        // Action ID 11 (Cancel order by cloid)
-        data[1] = 0x00;
-        data[2] = 0x00;
-        data[3] = 0x0B; // 0x0B = 11 in decimal
+    //     // Version 1
+    //     data[0] = 0x01;
+    //     // Action ID 11 (Cancel order by cloid)
+    //     data[1] = 0x00;
+    //     data[2] = 0x00;
+    //     data[3] = 0x0B; // 0x0B = 11 in decimal
 
-        // Copy encoded action data
-        for (uint256 i = 0; i < encodedAction.length; i++) {
-            data[4 + i] = encodedAction[i];
-        }
+    //     // Copy encoded action data
+    //     for (uint256 i = 0; i < encodedAction.length; i++) {
+    //         data[4 + i] = encodedAction[i];
+    //     }
 
-        ICoreWriter(CORE_WRITER).sendRawAction(data);
+    //     ICoreWriter(CORE_WRITER).sendRawAction(data);
 
-        emit CancelLimitOrderByCloid(assetId, cloid);
-    }
+    //     emit CancelLimitOrderByCloid(assetId, cloid);
+    // }
 
     /**
      * @dev Swap any token for any other token using the router
@@ -297,7 +288,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         address to,
         uint256 deadline,
         address referrer
-    ) external onlyOwner nonReentrant payable {
+    ) external payable onlyOwner nonReentrant {
         require(router != address(0), "Router not set");
         require(amountIn > 0, "Amount must be greater than 0");
         require(to != address(0), "Invalid recipient");
@@ -305,63 +296,52 @@ contract Arbitrage is Ownable, ReentrancyGuard {
 
         IRouter routerContract = IRouter(router);
         address weth = routerContract.WETH();
-        
+
         uint256 balanceBefore;
         uint256 balanceAfter;
-        
+
         if (tokenIn == address(0) && tokenOut != address(0)) {
             // ETH to Token swap
             require(msg.value >= amountIn, "Insufficient ETH sent");
-            
+
             address[] memory path = new address[](2);
             path[0] = weth;
             path[1] = tokenOut;
-            
+
             balanceBefore = IERC20(tokenOut).balanceOf(to);
-            
+
             routerContract.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amountIn}(
-                amountOutMin,
-                path,
-                to,
-                referrer,
-                deadline
+                amountOutMin, path, to, referrer, deadline
             );
-            
+
             balanceAfter = IERC20(tokenOut).balanceOf(to);
-            
+
             emit TokenSwap(tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to);
-            
         } else if (tokenIn != address(0) && tokenOut == address(0)) {
             // Token to ETH swap
             IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
             IERC20(tokenIn).approve(router, amountIn);
-            
+
             address[] memory path = new address[](2);
             path[0] = tokenIn;
             path[1] = weth;
-            
+
             balanceBefore = to.balance;
-            
+
             routerContract.swapExactTokensForETHSupportingFeeOnTransferTokens(
-                amountIn,
-                amountOutMin,
-                path,
-                to,
-                referrer,
-                deadline
+                amountIn, amountOutMin, path, to, referrer, deadline
             );
-            
+
             balanceAfter = to.balance;
-            
+
             emit TokenSwap(tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to);
-            
         } else if (tokenIn != address(0) && tokenOut != address(0)) {
             // Token to Token swap
             IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
             IERC20(tokenIn).approve(router, amountIn);
-            
+
             address[] memory path;
-            
+
             // Check if we need to route through WETH
             if (tokenIn == weth || tokenOut == weth) {
                 path = new address[](2);
@@ -373,22 +353,16 @@ contract Arbitrage is Ownable, ReentrancyGuard {
                 path[1] = weth;
                 path[2] = tokenOut;
             }
-            
+
             balanceBefore = IERC20(tokenOut).balanceOf(to);
-            
+
             routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                amountIn,
-                amountOutMin,
-                path,
-                to,
-                referrer,
-                deadline
+                amountIn, amountOutMin, path, to, referrer, deadline
             );
-            
+
             balanceAfter = IERC20(tokenOut).balanceOf(to);
-            
+
             emit TokenSwap(tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to);
-            
         } else {
             revert("Invalid token pair: cannot swap ETH for ETH");
         }

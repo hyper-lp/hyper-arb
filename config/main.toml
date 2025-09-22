@@ -65,91 +65,91 @@ position_manager = "0xeaD19AE861c29bBb2101E834922B2FEee69B9091"
 
 # === Global ===
 
-[[targets]]
-vault_name = "alpha"
-address = "0xd36FE1BcDf2deEC384D1538360091eCf4c4a1688"
-base_token = "wHYPE"
-base_token_address = "0x5555555555555555555555555555555555555555"
-quote_token = "USDT0"
-quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
-hyperswap_pools = [
-    "0x337b56d87a6185cd46af3ac2cdf03cbc37070c30", # 0.05% - 4100 K$
-    "0x56abfaf40f5b7464e9cc8cff1af13863d6914508", # 0.3% - 761 K$
-    "0xf40d57783c3359f160d006b9bc7a2e4311fe6a86", # 1% - 32 K$
-    "0x7f63ac9b82905d870071024fa310cf0ab8a74ad1", # 0.01% - 5 K$
-]
-prjx_pools = [
-    "0xbd19e19e4b70eb7f248695a42208bc1edbbfb57d", # 0.05% - 7 257 K$
-    "0x161fB7d6c764f81DAE581E8a4981772750416727" # 0.3% - 859 K$
-    ]
-min_watch_spread_bps = 5.0
-min_executable_spread_bps = -5.0
-max_slippage_pct = 0.0005
-max_inventory_ratio = 0.2
-tx_gas_limit = 300000
-poll_interval_ms = 500
-publish_events = false
-skip_simulation = true
-infinite_approval = true
-reference = "pyth"
-statistical_arb = true
-disabled_arb_treshold = 20
-min_trade_value_usd = 10.0  # Minimum trade value in USD
+# [[targets]]
+# vault_name = "alpha"
+# address = "0xd36FE1BcDf2deEC384D1538360091eCf4c4a1688"
+# base_token = "wHYPE"
+# base_token_address = "0x5555555555555555555555555555555555555555"
+# quote_token = "USDT0"
+# quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
+# hyperswap_pools = [
+#     "0x337b56d87a6185cd46af3ac2cdf03cbc37070c30", # 0.05% - 4100 K$
+#     "0x56abfaf40f5b7464e9cc8cff1af13863d6914508", # 0.3% - 761 K$
+#     "0xf40d57783c3359f160d006b9bc7a2e4311fe6a86", # 1% - 32 K$
+#     "0x7f63ac9b82905d870071024fa310cf0ab8a74ad1", # 0.01% - 5 K$
+# ]
+# prjx_pools = [
+#     "0xbd19e19e4b70eb7f248695a42208bc1edbbfb57d", # 0.05% - 7 257 K$
+#     "0x161fB7d6c764f81DAE581E8a4981772750416727" # 0.3% - 859 K$
+#     ]
+# min_watch_spread_bps = 5.0
+# min_executable_spread_bps = -5.0
+# max_slippage_pct = 0.0005
+# max_inventory_ratio = 0.5
+# tx_gas_limit = 300000
+# poll_interval_ms = 500
+# publish_events = false
+# skip_simulation = true
+# infinite_approval = true
+# reference = "pyth"
+# statistical_arb = true
+# disabled_arb_treshold = 20
+# min_trade_value_usd = 10.0  # Minimum trade value in USD
 
-[[targets]]
-vault_name = "bravo"
-address = "0xA0839162255038f6330Ec241972fa6a9E457218f"
-base_token = "BTC" # On BTC, never swap less than 20$
-base_token_address = "0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463"
-quote_token = "USDT0"
-quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
+# [[targets]]
+# vault_name = "bravo"
+# address = "0xA0839162255038f6330Ec241972fa6a9E457218f"
+# base_token = "BTC" # On BTC, never swap less than 20$
+# base_token_address = "0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463"
+# quote_token = "USDT0"
+# quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
 
-hyperswap_pools = [
-    "0x7cac5c8ad2fb1216d3f262b2c9cd5548d0329e78" # 0.3% - 362 K$
-    ]
-prjx_pools = [
-    "0xfd0cb41a4a28b5ca13affe65cd5924f461b3c850" # 0.05% - 941 K$
-]
-min_watch_spread_bps = 5.0
-min_executable_spread_bps = -5.0
-max_slippage_pct = 0.0005
-max_inventory_ratio = 0.2
-tx_gas_limit = 300000
-poll_interval_ms = 500
-publish_events = false
-skip_simulation = true
-infinite_approval = true
-reference = "pyth"
-statistical_arb = true
-disabled_arb_treshold = 20
-min_trade_value_usd = 10.0  # Minimum trade value in USD
+# hyperswap_pools = [
+#     "0x7cac5c8ad2fb1216d3f262b2c9cd5548d0329e78" # 0.3% - 362 K$
+#     ]
+# prjx_pools = [
+#     "0xfd0cb41a4a28b5ca13affe65cd5924f461b3c850" # 0.05% - 941 K$
+# ]
+# min_watch_spread_bps = 5.0
+# min_executable_spread_bps = -5.0
+# max_slippage_pct = 0.0005
+# max_inventory_ratio = 0.5
+# tx_gas_limit = 300000
+# poll_interval_ms = 500
+# publish_events = false
+# skip_simulation = true
+# infinite_approval = true
+# reference = "pyth"
+# statistical_arb = true
+# disabled_arb_treshold = 20
+# min_trade_value_usd = 10.0  # Minimum trade value in USD
 
-[[targets]]
-vault_name = "charlie"
-address = "0x1efe556826A4Df31DF0c3B18a34342c920a5B94e"
-base_token = "ETH"
-base_token_address = "0xBe6727B535545C67d5cAa73dEa54865B92CF7907"
-quote_token = "USDT0"
-quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
-hyperswap_pools = [
-    "0x2850fe0dcf4ca5e0a7b8355f4a875f96a92de948" # 0.3% - 380 K$
-]
-prjx_pools = [
-    "0xaEAE69783e3121196A45f3930fa141f462A4Df2F" # 0.3% - 184 K$
-]
-min_watch_spread_bps = 5.0
-min_executable_spread_bps = 5.0
-max_slippage_pct = 0.0005
-max_inventory_ratio = 0.5
-tx_gas_limit = 300000
-poll_interval_ms = 500
-publish_events = false
-skip_simulation = true
-infinite_approval = true
-reference = "pyth" # => "hypercore" # "redstone" # "pyth"
-statistical_arb = true # Can only be false if reference is 'hypercore'
-disabled_arb_treshold = 20
-min_trade_value_usd = 5.0  # Minimum trade value in USD
+# [[targets]]
+# vault_name = "charlie"
+# address = "0x1efe556826A4Df31DF0c3B18a34342c920a5B94e"
+# base_token = "ETH"
+# base_token_address = "0xBe6727B535545C67d5cAa73dEa54865B92CF7907"
+# quote_token = "USDT0"
+# quote_token_address = "0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb"
+# hyperswap_pools = [
+#     "0x2850fe0dcf4ca5e0a7b8355f4a875f96a92de948" # 0.3% - 380 K$
+# ]
+# prjx_pools = [
+#     "0xaEAE69783e3121196A45f3930fa141f462A4Df2F" # 0.3% - 184 K$
+# ]
+# min_watch_spread_bps = 5.0
+# min_executable_spread_bps = 5.0
+# max_slippage_pct = 0.0005
+# max_inventory_ratio = 0.5
+# tx_gas_limit = 300000
+# poll_interval_ms = 500
+# publish_events = false
+# skip_simulation = true
+# infinite_approval = true
+# reference = "pyth" # => "hypercore" # "redstone" # "pyth"
+# statistical_arb = true # Can only be false if reference is 'hypercore'
+# disabled_arb_treshold = 20
+# min_trade_value_usd = 10.0  # Minimum trade value in USD
 
 
 
@@ -173,7 +173,7 @@ prjx_pools = [
 min_watch_spread_bps = 5.0
 min_executable_spread_bps = 5.0
 max_slippage_pct = 0.0005
-max_inventory_ratio = 0.2
+max_inventory_ratio = 0.5
 tx_gas_limit = 300000
 poll_interval_ms = 500
 publish_events = false
@@ -183,4 +183,4 @@ infinite_approval = true
 reference = "pyth" # => "hypercore" # "redstone" # "pyth"
 statistical_arb = true # Can only be false if reference is 'hypercore'
 disabled_arb_treshold = 20
-min_trade_value_usd = 10.0  # Minimum trade value in USD
+min_trade_value_usd = 5.0  # Minimum trade value in USD

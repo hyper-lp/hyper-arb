@@ -7,21 +7,6 @@ networks:
 
 services:
 
-  manager:
-    build: 
-      context: .
-      dockerfile: ops/Dockerfile
-      args:
-        - PROGRAM=rebalancer
-        - BUILD_TYPE=debug
-    depends_on: []
-    environment:
-      - RUST_LOG=off,shd=trace,rebalancer=trace,test=trace
-    restart: always
-    networks:
-      - hyperarb
-
-  arbitrager:
     build: 
       context: .
       dockerfile: ops/Dockerfile
@@ -35,20 +20,12 @@ services:
     networks:
       - hyperarb
 
-  # NEW: TypeScript inventory manager
-  ts-manager:
+  manager:
     build: 
       context: .
-      dockerfile: ops/Dockerfile.manager
+      dockerfile: ops/DockerfileRebal
     depends_on: []
-    environment:
-      - TARGET_NAME=delta              # Target selection (optional - if not set, monitors all targets)
-      - CONFIG_PATH=/app/config/main.toml
-      - WALLET_PUB_KEYS=${WALLET_PUB_KEYS}           # Comma-separated public keys
-      - WALLET_PRIVATE_KEYS=${WALLET_PRIVATE_KEYS}   # Comma-separated private keys
     restart: always
+    depends_on: []
     networks:
       - hyperarb
-    volumes:
-      - ./config:/app/config:ro
-  
