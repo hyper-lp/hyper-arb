@@ -8,3 +8,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model ArbTrade {
+  id         String      @id @default(uuid())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  instanceName String // HyperArb-<Alpha|Bravo|Charlie>
+  values     Json
+}

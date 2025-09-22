@@ -11,8 +11,8 @@ use crate::{
 };
 
 // Constants
-const SWAP_GAS_UNITS: u128 = 150_000;
-const SLIPPAGE_PERCENT: u64 = 5; // 5% slippage protection
+pub const SWAP_GAS_UNITS: u128 = 150_000;
+pub const SLIPPAGE_PERCENT: u64 = 5; // 5% slippage protection
 
 /// Best arbitrage opportunity data
 #[derive(Debug, Clone)]
@@ -26,8 +26,44 @@ pub struct BestOpportunity {
     pub pool_fee_tier: u32,
 }
 
+/// Double-leg arbitrage opportunity with buy and sell legs
+#[derive(Debug, Clone)]
+pub struct DoubleLegOpportunity {
+    pub buy_leg: BestOpportunity,
+    pub sell_leg: BestOpportunity,
+    pub amount_in_buy: U256,  // Amount of quote token to spend on buy leg
+    pub amount_in_sell: U256, // Amount of base token to sell on sell leg  
+    pub expected_profit_usd: f64,
+    pub gas_cost_usd: f64,
+}
+
+/// Pool swap parameters for DEX router
+#[derive(Debug, Clone)]
+pub struct PoolSwapParams {
+    pub dex: String,
+    pub router_address: Address,
+    pub token_in: Address,
+    pub token_out: Address,
+    pub amount_in: U256,
+    pub amount_out_min: U256,
+    pub pool_address: String,
+    pub pool_fee_tier: u32,
+    pub recipient: Address,
+}
+
+/// Spot order parameters for CoreWriter
+#[derive(Debug, Clone)]
+pub struct SpotOrderParams {
+    pub base_token: String,
+    pub quote_token: String,
+    pub is_buy: bool,
+    pub amount: f64,
+    pub price: f64,
+    pub slippage: f64,
+}
+
 /// Get current gas price from the network
-async fn get_gas_price<P: Provider>(provider: P) -> Result<u128> {
+pub async fn get_gas_price<P: Provider>(provider: P) -> Result<u128> {
     let gas_price = provider.get_gas_price().await?;
     Ok(gas_price)
 }

@@ -214,8 +214,10 @@ pub struct ArbTarget {
     pub vault_name: String,
     pub address: String,
     pub base_token: String,
+    #[serde(default)]
     pub base_token_address: String,
     pub quote_token: String,
+    #[serde(default)]
     pub quote_token_address: String,
     pub hyperswap_pools: Vec<String>,
     pub prjx_pools: Vec<String>,
