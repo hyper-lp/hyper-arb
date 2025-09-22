@@ -20,8 +20,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     // State Variables
     // ========================================
 
-    address public constant CORE_WRITER =
-        0x3333333333333333333333333333333333333333;
+    address public constant CORE_WRITER = 0x3333333333333333333333333333333333333333;
 
     address public hyperSwapRouter;
     address public projectXRouter;
@@ -105,11 +104,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     /**
      * @dev Get token decimals configuration
      */
-    function getTokenDecimals(address token)
-        private
-        view
-        returns (TokenDecimals memory)
-    {
+    function getTokenDecimals(address token) private view returns (TokenDecimals memory) {
         TokenDecimals memory decimals = tokenDecimals[token];
         // Return default if not configured
         if (decimals.szDecimals == 0) {
@@ -123,11 +118,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * Input: price in 8-decimal integer format
      * Output: price in 8-decimal integer format with proper rounding
      */
-    function formatPrice(uint64 price, address token)
-        private
-        pure
-        returns (uint64)
-    {
+    function formatPrice(uint64 price, address token) private pure returns (uint64) {
         if (token == BTC_ADDRESS) {
             // BTC: 6 significant digits rounding
             return formatPriceWithSigDigits(price, 6);
@@ -137,8 +128,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         } else {
             // Other tokens: use szDecimals constraint
             TokenDecimals memory decimals = getTokenDecimals(token);
-            uint8 maxDecimals =
-                decimals.szDecimals >= 8 ? 0 : 8 - decimals.szDecimals;
+            uint8 maxDecimals = decimals.szDecimals >= 8 ? 0 : 8 - decimals.szDecimals;
             return roundToDecimals(price, maxDecimals);
         }
     }
@@ -146,11 +136,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     /**
      * @dev Round price to specified number of significant digits
      */
-    function formatPriceWithSigDigits(uint64 price, uint8 sigDigits)
-        private
-        pure
-        returns (uint64)
-    {
+    function formatPriceWithSigDigits(uint64 price, uint8 sigDigits) private pure returns (uint64) {
         if (price == 0) return 0;
 
         // Convert to floating point equivalent (price / 1e8)
@@ -167,9 +153,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         }
 
         // Calculate decimals to keep
-        uint8 decimalsToKeep = sigDigits > digitsBeforeDecimal
-            ? sigDigits - digitsBeforeDecimal
-            : 0;
+        uint8 decimalsToKeep = sigDigits > digitsBeforeDecimal ? sigDigits - digitsBeforeDecimal : 0;
 
         return roundToDecimals(price, decimalsToKeep);
     }
@@ -177,11 +161,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     /**
      * @dev Round price to specified decimal places
      */
-    function roundToDecimals(uint64 price, uint8 decimals)
-        private
-        pure
-        returns (uint64)
-    {
+    function roundToDecimals(uint64 price, uint8 decimals) private pure returns (uint64) {
         if (decimals >= 8) return price;
 
         uint256 factor = 10 ** (8 - decimals);
@@ -196,11 +176,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param token Token address for decimal lookup
      * @return Scaled size for order encoding (8 decimals)
      */
-    function scaleSize(uint64 size, address token)
-        private
-        view
-        returns (uint64)
-    {
+    function scaleSize(uint64 size, address token) private view returns (uint64) {
         TokenDecimals memory decimals = getTokenDecimals(token);
 
         if (decimals.szDecimals >= 8) {
@@ -220,11 +196,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param token Token address for decimal lookup
      * @return Truncated size in native precision
      */
-    function truncateSize(uint64 size, address token)
-        private
-        view
-        returns (uint64)
-    {
+    function truncateSize(uint64 size, address token) private view returns (uint64) {
         TokenDecimals memory decimals = getTokenDecimals(token);
 
         if (decimals.szDecimals == 0) return size;
@@ -244,44 +216,23 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     event CrossMarketTransfer(uint256 ntl, bool toPerp);
 
     event LimitOrder(
-        uint32 assetId,
-        bool isBuy,
-        uint64 limitPx,
-        uint64 size,
-        bool reduceOnly,
-        uint8 encodedTif,
-        uint128 cloid
+        uint32 assetId, bool isBuy, uint64 limitPx, uint64 size, bool reduceOnly, uint8 encodedTif, uint128 cloid
     );
 
-    event APIWalletAdded(
-        address indexed walletAddress, string indexed walletName
-    );
+    event APIWalletAdded(address indexed walletAddress, string indexed walletName);
 
-    event SpotTransfer(
-        address indexed to, uint64 indexed token, uint64 indexed weiAmount
-    );
+    event SpotTransfer(address indexed to, uint64 indexed token, uint64 indexed weiAmount);
 
     event TokenSwap(
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut,
-        address indexed to
+        address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut, address indexed to
     );
 
-<<<<<<< HEAD
-    event SystemAddressUpdated(
-        address indexed oldAddress, address indexed newAddress
-    );
-    event RouterUpdated(address indexed oldRouter, address indexed newRouter);
-=======
     event SystemAddressUpdated(address indexed oldAddress, address indexed newAddress);
     event HyperSwapRouterUpdated(address indexed oldRouter, address indexed newRouter);
     event ProjectXRouterUpdated(address indexed oldRouter, address indexed newRouter);
     event ArbitrageExecuted(
         string dex, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut, uint256 expectedProfit
     );
->>>>>>> c6bfdda (feat(Bundle-Arb-via-corewriter-spot-exec-+-pool-exec): None)
     event KeeperUpdated(address indexed oldKeeper, address indexed newKeeper);
     event CancelLimitOrder(uint32 assetId, uint64 oid);
     event Paused(address account);
@@ -291,16 +242,12 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     // ========================================
 
     constructor() Ownable(msg.sender) {
-<<<<<<< HEAD
-        initializeTokenDecimals();
-=======
         paused = false;
     }
 
     modifier whenNotPaused() {
         require(!paused, "Contract is paused");
         _;
->>>>>>> c6bfdda (feat(Bundle-Arb-via-corewriter-spot-exec-+-pool-exec): None)
     }
 
     // ========================================
@@ -336,10 +283,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param walletName The name for the API wallet (empty string makes it the main API wallet/agent)
      * @notice This function can only be called once every 170 days for security
      */
-    function addApiWallet(address walletAddress, string memory walletName)
-        external
-        onlyOwner
-    {
+    function addApiWallet(address walletAddress, string memory walletName) external onlyOwner {
         require(walletAddress != address(0), "Wallet address cannot be zero");
 
         // Construct the action data for adding API wallet (Action ID 9)
@@ -370,16 +314,11 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param weiAmount Amount of token to bridge (in wei)
      * @notice Uses spotSend action to transfer USDT from HyperCore to HyperEVM
      */
-    function bridgeToEvm(
-        address tokenSystemAddress,
-        uint64 token,
-        uint64 weiAmount
-    ) external onlyOwner {
+    function bridgeToEvm(address tokenSystemAddress, uint64 token, uint64 weiAmount) external onlyOwner {
         require(weiAmount > 0, "Amount must be greater than 0");
 
         // Construct the action data for spot transfer (Action ID 5)
-        bytes memory encodedAction =
-            abi.encode(tokenSystemAddress, token, weiAmount);
+        bytes memory encodedAction = abi.encode(tokenSystemAddress, token, weiAmount);
         bytes memory data = new bytes(4 + encodedAction.length);
 
         // Version 1
@@ -405,10 +344,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param weiAmount Amount of token to bridge (in wei)
      * @notice User action to transfer USDT from HyperCore to HyperEVM
      */
-    function spotTransfer(address to, uint64 token, uint64 weiAmount)
-        external
-        onlyOwner
-    {
+    function spotTransfer(address to, uint64 token, uint64 weiAmount) external onlyOwner {
         require(weiAmount > 0, "Amount must be greater than 0");
 
         bytes memory encodedAction = abi.encode(to, token, weiAmount);
@@ -437,11 +373,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param amount Amount of token to bridge (in wei)
      * @notice Uses spotSend action to transfer USDT from HyperCore to HyperEVM
      */
-    function bridgeToCore(
-        address tokenSystemAddress,
-        address token,
-        uint256 amount
-    ) external onlyOwner {
+    function bridgeToCore(address tokenSystemAddress, address token, uint256 amount) external onlyOwner {
         require(amount > 0, "Amount must be greater than 0");
 
         IERC20(token).transfer(tokenSystemAddress, amount);
@@ -470,16 +402,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         uint128 cloid,
         address tokenAddress
     ) external onlyOwner {
-        _placeLimitOrder(
-            assetId,
-            isBuy,
-            limitPx,
-            size,
-            reduceOnly,
-            encodedTif,
-            cloid,
-            tokenAddress
-        );
+        _placeLimitOrder(assetId, isBuy, limitPx, size, reduceOnly, encodedTif, cloid, tokenAddress);
     }
 
     /**
@@ -504,9 +427,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         require(size > 0, "Amount must be greater than 0");
 
         // Construct the action data for limit order (Action ID 1)
-        bytes memory encodedAction = abi.encode(
-            assetId, isBuy, limitPx, size, reduceOnly, encodedTif, cloid
-        );
+        bytes memory encodedAction = abi.encode(assetId, isBuy, limitPx, size, reduceOnly, encodedTif, cloid);
         bytes memory data = new bytes(4 + encodedAction.length);
 
         // Version 1
@@ -523,9 +444,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
 
         ICoreWriter(CORE_WRITER).sendRawAction(data);
 
-        emit LimitOrder(
-            assetId, isBuy, limitPx, size, reduceOnly, encodedTif, cloid
-        );
+        emit LimitOrder(assetId, isBuy, limitPx, size, reduceOnly, encodedTif, cloid);
     }
 
     // ========================================
@@ -539,12 +458,10 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param priceUsdc The limit price in USDC (8-decimal format)
      * @param assetId The asset ID for the token/USDC pair
      */
-    function sellTokenForUsdc(
-        address tokenAddress,
-        uint64 amount,
-        uint64 priceUsdc,
-        uint32 assetId
-    ) external onlyOwner {
+    function sellTokenForUsdc(address tokenAddress, uint64 amount, uint64 priceUsdc, uint32 assetId)
+        external
+        onlyOwner
+    {
         _placeLimitOrder(
             assetId,
             false, // sell
@@ -564,12 +481,10 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @param priceUsdc The limit price in USDC (8-decimal format)
      * @param assetId The asset ID for the token/USDC pair
      */
-    function buyTokenWithUsdc(
-        address tokenAddress,
-        uint64 amount,
-        uint64 priceUsdc,
-        uint32 assetId
-    ) external onlyOwner {
+    function buyTokenWithUsdc(address tokenAddress, uint64 amount, uint64 priceUsdc, uint32 assetId)
+        external
+        onlyOwner
+    {
         _placeLimitOrder(
             assetId,
             true, // buy
@@ -611,15 +526,8 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         }
 
         // Construct the action data for limit order (Action ID 1)
-        bytes memory encodedAction = abi.encode(
-            assetId,
-            isBuy,
-            formattedPrice,
-            formattedSize,
-            reduceOnly,
-            encodedTif,
-            cloid
-        );
+        bytes memory encodedAction =
+            abi.encode(assetId, isBuy, formattedPrice, formattedSize, reduceOnly, encodedTif, cloid);
         bytes memory data = new bytes(4 + encodedAction.length);
 
         // Version 1
@@ -636,15 +544,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
 
         ICoreWriter(CORE_WRITER).sendRawAction(data);
 
-        emit LimitOrder(
-            assetId,
-            isBuy,
-            formattedPrice,
-            formattedSize,
-            reduceOnly,
-            encodedTif,
-            cloid
-        );
+        emit LimitOrder(assetId, isBuy, formattedPrice, formattedSize, reduceOnly, encodedTif, cloid);
     }
 
     /**
@@ -733,73 +633,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
                 sqrtPriceLimitX96: sqrtPriceLimitX96
             });
 
-<<<<<<< HEAD
-            routerContract.swapExactETHForTokensSupportingFeeOnTransferTokens{
-                value: amountIn
-            }(amountOutMin, path, to, referrer, deadline);
-
-            balanceAfter = IERC20(tokenOut).balanceOf(to);
-
-            emit TokenSwap(
-                tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to
-            );
-        } else if (tokenIn != address(0) && tokenOut == address(0)) {
-            // Token to ETH swap
-            IERC20(tokenIn).safeTransferFrom(
-                msg.sender, address(this), amountIn
-            );
-            IERC20(tokenIn).approve(router, amountIn);
-
-            address[] memory path = new address[](2);
-            path[0] = tokenIn;
-            path[1] = weth;
-
-            balanceBefore = to.balance;
-
-            routerContract.swapExactTokensForETHSupportingFeeOnTransferTokens(
-                amountIn, amountOutMin, path, to, referrer, deadline
-            );
-
-            balanceAfter = to.balance;
-
-            emit TokenSwap(
-                tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to
-            );
-        } else if (tokenIn != address(0) && tokenOut != address(0)) {
-            // Token to Token swap
-            IERC20(tokenIn).safeTransferFrom(
-                msg.sender, address(this), amountIn
-            );
-            IERC20(tokenIn).approve(router, amountIn);
-
-            address[] memory path;
-
-            // Check if we need to route through WETH
-            if (tokenIn == weth || tokenOut == weth) {
-                path = new address[](2);
-                path[0] = tokenIn;
-                path[1] = tokenOut;
-            } else {
-                path = new address[](3);
-                path[0] = tokenIn;
-                path[1] = weth;
-                path[2] = tokenOut;
-            }
-
-            balanceBefore = IERC20(tokenOut).balanceOf(to);
-
-            routerContract.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                amountIn, amountOutMin, path, to, referrer, deadline
-            );
-
-            balanceAfter = IERC20(tokenOut).balanceOf(to);
-
-            emit TokenSwap(
-                tokenIn, tokenOut, amountIn, balanceAfter - balanceBefore, to
-            );
-=======
             amountOut = IProjectXRouter(projectXRouter).exactInputSingle(params);
->>>>>>> c6bfdda (feat(Bundle-Arb-via-corewriter-spot-exec-+-pool-exec): None)
         } else {
             revert("Invalid DEX: must be 'hyperswap' or 'projectx'");
         }
@@ -823,19 +657,19 @@ contract Arbitrage is Ownable, ReentrancyGuard {
         require(poolSwapParams.amountIn > 0, "Invalid pool swap amount");
         require(spotOrderParams.amount > 0, "Invalid spot order amount");
         require(opportunity.expectedProfitUsd > opportunity.gasCostUsd, "No profit after gas");
-        
+
         // Validate decimal parameters to prevent underflow
         require(spotOrderParams.weiDecimals >= spotOrderParams.szDecimals, "Invalid decimal configuration");
         require(spotOrderParams.szDecimals <= 8, "szDecimals too large");
         require(spotOrderParams.weiDecimals <= 18, "weiDecimals too large");
-        
+
         // Check balance before swap
         uint256 tokenInBalance = IERC20(poolSwapParams.tokenIn).balanceOf(address(this));
         require(tokenInBalance >= poolSwapParams.amountIn, "Insufficient token balance for swap");
 
         // Step 1: Execute DEX swap (buy leg) - Quote to Base
         uint256 balanceBefore = IERC20(poolSwapParams.tokenOut).balanceOf(poolSwapParams.recipient);
-        
+
         uint256 baseTokensReceived = exactInputSingle(
             poolSwapParams.dex,
             poolSwapParams.tokenIn,
@@ -846,7 +680,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
             poolSwapParams.recipient,
             0 // No price limit
         );
-        
+
         // Verify swap success
         uint256 balanceAfter = IERC20(poolSwapParams.tokenOut).balanceOf(poolSwapParams.recipient);
         require(balanceAfter > balanceBefore, "DEX swap failed");
@@ -933,10 +767,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      * @notice Emergency withdrawal of stuck tokens
      * @dev Only callable by owner in case of emergency
      */
-    function emergencyWithdraw(address token, uint256 amount)
-        external
-        onlyOwner
-    {
+    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
         if (token == address(0)) {
             payable(owner()).transfer(amount);
         } else {
@@ -950,12 +781,12 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      */
     function truncateToPrecision(uint256 number, uint8 decimals) internal pure returns (uint256) {
         if (decimals == 0) return number;
-        
+
         // Implement actual truncation: Math.floor(number * factor) / factor
         // Since we're working with integers representing fixed-point numbers,
         // we need to remove the least significant digits beyond our precision
         uint256 factor = 10 ** uint256(decimals);
-        
+
         // This truncates by dividing by factor and then multiplying back
         // Integer division naturally floors the result
         return (number / factor) * factor;
@@ -972,7 +803,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
     {
         bytes32 symbolHash = keccak256(bytes(tokenSymbol));
         uint256 formattedPrice = price;
-        
+
         // Apply significant digits rounding based on token type
         if (symbolHash == keccak256(bytes("BTC"))) {
             // BTC: 6 significant digits
@@ -989,11 +820,11 @@ contract Arbitrage is Ownable, ReentrancyGuard {
                 formattedPrice = (price / divisor) * divisor;
             }
         }
-        
+
         require(formattedPrice <= type(uint64).max, "Price overflow");
         return uint64(formattedPrice);
     }
-    
+
     /**
      * @dev Round a price to N significant digits
      * @param price Price in 8 decimal format
@@ -1001,7 +832,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
      */
     function roundToSignificantDigits(uint256 price, uint8 sigDigits) internal pure returns (uint256) {
         if (price == 0) return 0;
-        
+
         // Find the magnitude (number of digits)
         uint256 magnitude = 0;
         uint256 temp = price;
@@ -1009,7 +840,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
             temp /= 10;
             magnitude++;
         }
-        
+
         // Calculate how many digits to remove
         if (magnitude >= sigDigits) {
             uint256 digitsToRemove = magnitude - sigDigits + 1;
@@ -1017,7 +848,7 @@ contract Arbitrage is Ownable, ReentrancyGuard {
             // Round by dividing and multiplying back
             return (price / divisor) * divisor;
         }
-        
+
         return price;
     }
 
