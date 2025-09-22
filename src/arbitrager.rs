@@ -92,14 +92,28 @@ where
                 match get_pool_info(provider.clone(), pool_addr).await {
                     Ok(pool_info) => {
                         let price = calculate_pool_prices(&pool_info);
-                        let spread_bps = ((price.token0_price - reference_price) / reference_price) * BASIS_POINT_DENO;
+
+                        // Determine which price to use based on token order
+                        // We need the price of base_token in terms of quote_token
+                        let pool_price = if pool_info.token0.to_string().to_lowercase() == target.base_token_address.to_lowercase() {
+                            // base_token is token0, so we want token0/token1 price
+                            price.token0_price
+                        } else if pool_info.token1.to_string().to_lowercase() == target.base_token_address.to_lowercase() {
+                            // base_token is token1, so we want token1/token0 price
+                            price.token1_price
+                        } else {
+                            tracing::warn!("Pool {} doesn't contain base token {}", &pool_addr_str[..10], target.base_token);
+                            continue;
+                        };
+
+                        let spread_bps = ((pool_price - reference_price) / reference_price) * BASIS_POINT_DENO;
                         let fee_bps = (price.fee as f64) / 100.0; // Convert fee to basis points
                         let net_profit_bps = spread_bps.abs() - fee_bps; // Single fee for one-way trade
 
                         tracing::info!(
                             " - {} | Pool: ${:.4} | Ref: ${:.4} | Spread: {:.2} bps | Fee: {:.2} bps | Net: {:.2} bps",
                             &pool_addr_str[..10],
-                            price.token0_price,
+                            pool_price,
                             reference_price,
                             spread_bps,
                             fee_bps,
@@ -109,7 +123,7 @@ where
                         // Update best opportunity if this pool is better
                         if net_profit_bps > 0.0 && spread_bps.abs() >= target.min_watch_spread_bps {
                             if best_opportunity.is_none() || net_profit_bps > best_opportunity.as_ref().unwrap().5 {
-                                best_opportunity = Some(("Hyperswap".to_string(), pool_addr_str.clone(), price.token0_price, spread_bps, fee_bps, net_profit_bps, price.fee));
+                                best_opportunity = Some(("Hyperswap".to_string(), pool_addr_str.clone(), pool_price, spread_bps, fee_bps, net_profit_bps, price.fee));
                             }
                         }
                     }
@@ -131,14 +145,28 @@ where
                 match get_pool_info(provider.clone(), pool_addr).await {
                     Ok(pool_info) => {
                         let price = calculate_pool_prices(&pool_info);
-                        let spread_bps = ((price.token0_price - reference_price) / reference_price) * BASIS_POINT_DENO;
+
+                        // Determine which price to use based on token order
+                        // We need the price of base_token in terms of quote_token
+                        let pool_price = if pool_info.token0.to_string().to_lowercase() == target.base_token_address.to_lowercase() {
+                            // base_token is token0, so we want token0/token1 price
+                            price.token0_price
+                        } else if pool_info.token1.to_string().to_lowercase() == target.base_token_address.to_lowercase() {
+                            // base_token is token1, so we want token1/token0 price
+                            price.token1_price
+                        } else {
+                            tracing::warn!("Pool {} doesn't contain base token {}", &pool_addr_str[..10], target.base_token);
+                            continue;
+                        };
+
+                        let spread_bps = ((pool_price - reference_price) / reference_price) * BASIS_POINT_DENO;
                         let fee_bps = (price.fee as f64) / 100.0; // Convert fee to basis points
                         let net_profit_bps = spread_bps.abs() - fee_bps; // Single fee for one-way trade
 
                         tracing::info!(
                             " - {} | Pool: ${:.4} | Ref: ${:.4} | Spread: {:.2} bps | Fee: {:.2} bps | Net: {:.2} bps",
                             &pool_addr_str[..10],
-                            price.token0_price,
+                            pool_price,
                             reference_price,
                             spread_bps,
                             fee_bps,
@@ -148,7 +176,7 @@ where
                         // Update best opportunity if this pool is better
                         if net_profit_bps > 0.0 && spread_bps.abs() >= target.min_watch_spread_bps {
                             if best_opportunity.is_none() || net_profit_bps > best_opportunity.as_ref().unwrap().5 {
-                                best_opportunity = Some(("ProjectX".to_string(), pool_addr_str.clone(), price.token0_price, spread_bps, fee_bps, net_profit_bps, price.fee));
+                                best_opportunity = Some(("ProjectX".to_string(), pool_addr_str.clone(), pool_price, spread_bps, fee_bps, net_profit_bps, price.fee));
                             }
                         }
                     }
@@ -184,12 +212,12 @@ where
 
                     // Execute the swap
                     match shd::dex::swap::execute_statistical_arbitrage(provider.clone(), opportunity, &target, &env, &config, reference_price).await {
-                        Ok(_) => tracing::info!("✅ Trade executed successfully"),
-                        Err(e) => tracing::error!("❌ Trade execution failed: {}", e),
+                        Ok(_) => tracing::info!("Trade executed successfully"),
+                        Err(e) => tracing::error!("Trade execution failed: {}", e),
                     }
                 } else {
                     // If statistical_arb is false : prepare the order to be exec in the contract
-                    tracing::info!("  📝 Contract double-leg arbitrage mode - would prepare contract order");
+                    tracing::info!("Contract double-leg arbitrage mode - would prepare contract order");
                     // TODO: Implement double-leg arb preparation
                 }
             } else {
@@ -198,7 +226,7 @@ where
         } else {
             tracing::info!("No profitable pools found (all have negative net profit after fees)");
         }
-        tracing::info!("✅ Completed checks for target: {}", target.format_log_info());
+        tracing::info!("Completed checks for target: {}", target.format_log_info());
     }
 }
 
@@ -295,6 +323,15 @@ async fn main() -> Result<()> {
     tracing::info!("📊 Fetching prices for all configured targets...");
     let mut hype_price = 0.0;
 
+    // Initialize spot balance fetcher
+    let spot_fetcher = match shd::core::spot::HyperliquidSpotBalances::new() {
+        Ok(fetcher) => Some(fetcher),
+        Err(e) => {
+            tracing::warn!("Failed to initialize spot balance fetcher: {}", e);
+            None
+        }
+    };
+
     // Log balances for each target
     tracing::info!("💰 Checking balances for all targets...");
     for target in &config.targets {
@@ -308,24 +345,47 @@ async fn main() -> Result<()> {
         };
         let wallet_address = wallet.address();
 
-        // Fetch decimals and balances
-        match shd::utils::evm::get_token_info_and_balances(&config.global.rpc_endpoint, &format!("{:?}", wallet_address), &target.base_token_address, &target.quote_token_address).await {
-            Ok((base_decimals, quote_decimals, base_balance, quote_balance)) => {
-                let base_balance_formatted = base_balance as f64 / 10f64.powi(base_decimals as i32);
-                let quote_balance_formatted = quote_balance as f64 / 10f64.powi(quote_decimals as i32);
+        // Fetch EVM balances
+        if !target.base_token_address.is_empty() && !target.quote_token_address.is_empty() {
+            match shd::utils::evm::get_token_info_and_balances(&config.global.rpc_endpoint, &format!("{:?}", wallet_address), &target.base_token_address, &target.quote_token_address).await {
+                Ok((base_decimals, quote_decimals, base_balance, quote_balance)) => {
+                    let base_balance_formatted = base_balance as f64 / 10f64.powi(base_decimals as i32);
+                    let quote_balance_formatted = quote_balance as f64 / 10f64.powi(quote_decimals as i32);
 
-                tracing::info!(
-                    "  {} ({}) - {}: {:.6} | {}: {:.6}",
-                    target.vault_name,
-                    &target.address[..10],
-                    target.base_token,
-                    base_balance_formatted,
-                    target.quote_token,
-                    quote_balance_formatted
-                );
+                    tracing::info!(
+                        "  {} ({}) EVM - {}: {:.6} | {}: {:.6}",
+                        target.vault_name,
+                        &target.address[..10],
+                        target.base_token,
+                        base_balance_formatted,
+                        target.quote_token,
+                        quote_balance_formatted
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to fetch EVM balances for {}: {}", target.vault_name, e);
+                }
             }
-            Err(e) => {
-                tracing::error!("Failed to fetch balances for {}: {}", target.vault_name, e);
+        }
+
+        // Fetch Hyperliquid spot balances if fetcher is available
+        if let Some(ref fetcher) = spot_fetcher {
+            match fetcher.get_non_zero_balances(&format!("{:?}", wallet_address)).await {
+                Ok(spot_balances) => {
+                    if !spot_balances.is_empty() {
+                        let mut spot_summary = Vec::new();
+                        for balance in spot_balances.iter().take(5) {
+                            // Show max 5 tokens
+                            if let Ok(total) = balance.total_as_f64() {
+                                spot_summary.push(format!("{}: {:.4}", balance.coin, total));
+                            }
+                        }
+                        tracing::info!("  {} ({}) HyperliquidSpot - {}", target.vault_name, &target.address[..10], spot_summary.join(" | "));
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to fetch Hyperliquid spot balances for {}: {}", target.vault_name, e);
+                }
             }
         }
     }
@@ -343,7 +403,7 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 if target.base_token.to_uppercase() == "USDT0" || target.base_token.to_uppercase() == "USDC0" {
-                    tracing::debug!("{} is a stablecoin, using $1.00", target.base_token);
+                    // tracing::debug!("{} is a stablecoin, using $1.00", target.base_token);
                 } else {
                     tracing::warn!("Failed to fetch {} price from {:?}: {}", target.base_token, target.reference, e);
                 }
@@ -361,7 +421,7 @@ async fn main() -> Result<()> {
                 }
                 Err(e) => {
                     if target.quote_token.to_uppercase() == "USDT0" || target.quote_token.to_uppercase() == "USDC0" {
-                        tracing::debug!("{} is a stablecoin, using $1.00", target.quote_token);
+                        // tracing::debug!("{} is a stablecoin, using $1.00", target.quote_token);
                     } else {
                         tracing::warn!("Failed to fetch {} price from {:?}: {}", target.quote_token, target.reference, e);
                     }

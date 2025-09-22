@@ -36,8 +36,8 @@ async fn test_fetch_all_balances() -> Result<()> {
         };
         let wallet_address = wallet.address();
 
-        // ===== HYPERLIQUID SPOT BALANCES (L1) =====
-        println!("📊 HYPERLIQUID SPOT BALANCES (L1):");
+        // ===== HYPERLIQUID SPOT BALANCES =====
+        println!("📊 HYPERLIQUID SPOT BALANCES:");
         println!("   Address: 0x{:x}", wallet_address);
 
         match spot_fetcher.get_spot_balances(&format!("0x{:x}", wallet_address)).await {
@@ -70,8 +70,8 @@ async fn test_fetch_all_balances() -> Result<()> {
             }
         }
 
-        // ===== EVM BALANCES (L2 - HyperEVM) =====
-        println!("\n💎 HYPEREVM BALANCES (L2):");
+        // ===== EVM BALANCES =====
+        println!("\n💎 HYPEREVM BALANCES:");
         
         // Check if token addresses are configured (some targets like BTC/ETH don't have EVM addresses)
         if target.base_token_address.is_empty() || target.quote_token_address.is_empty() {
@@ -137,7 +137,7 @@ async fn test_fetch_all_balances() -> Result<()> {
                 for spot_balance in matching_spot {
                     if let Ok(total) = spot_balance.total_as_f64() {
                         if total > 0.0 {
-                            println!("   {} on L1 (Spot): {}", spot_balance.coin, spot_balance.total);
+                            println!("   {} on Hyperliquid Spot: {}", spot_balance.coin, spot_balance.total);
                         }
                     }
                 }

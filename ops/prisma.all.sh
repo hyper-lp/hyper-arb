@@ -1,3 +1,8 @@
+
+source config/.env
+export DATABASE_URL=$DATABASE_URL
+echo "🔄 All in one script for database with at DATABASE_URL = $DATABASE_URL"
+
 #!/bin/bash
 echo "🔄 Resetting database with at DATABASE_URL = $DATABASE_URL"
 npx prisma migrate reset --force --schema=ops/prisma/schema.prisma # ! Very destructive, will drop all data
