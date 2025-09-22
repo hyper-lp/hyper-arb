@@ -348,8 +348,116 @@ class HyperArbManager {
     }
 
     private async productionModeMonitoring(target: any) {
-        // Production mode logic (existing code would go here)
-        console.log(`🔑 [${target.vault_name}] Production monitoring not yet implemented`);
+        console.log(`🔑 [${target.vault_name}] Production monitoring...`);
+        
+        try {
+            // Validate wallet configuration
+            if (this.walletConfig.privateKeys.length === 0) {
+                console.error(`❌ No wallets configured for production mode`);
+                return;
+            }
+            
+            // Use the first available wallet for this target (typical pattern)
+            // In the future, this could be enhanced with target-specific wallet mapping
+            const privateKey = this.walletConfig.privateKeys[0];
+            const walletAddress = this.walletConfig.publicKeys[0];
+            
+            console.log(`📋 Using wallet: ${walletAddress} for target: ${target.vault_name}`);
+            
+            // Create signer for this wallet
+            const signer = new ethers.Wallet(privateKey, this.provider);
+            const { BalanceMonitor } = await import('./utils/BalanceMonitor.js');
+            const monitor = new BalanceMonitor(this.provider, signer);
+            
+            // Verify wallet address matches signer
+            const signerAddress = await signer.getAddress();
+            if (signerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+                throw new Error(`Wallet address mismatch: expected ${walletAddress}, got ${signerAddress}`);
+            }
+            
+            // Get real portfolio snapshot
+            const portfolio = await monitor.getPortfolioSnapshot(target);
+            
+            console.log(`📊 Portfolio Snapshot:`);
+            console.log(`  Base (${target.base_token}): ${ethers.formatUnits(portfolio.baseToken.balance.totalBalance, portfolio.baseToken.balance.decimals)} ($${Number(portfolio.baseToken.valueUsd) / 1e8})`);
+            console.log(`    EVM: ${ethers.formatUnits(portfolio.baseToken.balance.evmBalance, portfolio.baseToken.balance.decimals)}`);
+            console.log(`    Core: ${ethers.formatUnits(portfolio.baseToken.balance.coreBalance, portfolio.baseToken.balance.decimals)}`);
+            console.log(`  Quote (${target.quote_token}): ${ethers.formatUnits(portfolio.quoteToken.balance.totalBalance, portfolio.quoteToken.balance.decimals)} ($${Number(portfolio.quoteToken.valueUsd) / 1e8})`);
+            console.log(`    EVM: ${ethers.formatUnits(portfolio.quoteToken.balance.evmBalance, portfolio.quoteToken.balance.decimals)}`);
+            console.log(`    Core: ${ethers.formatUnits(portfolio.quoteToken.balance.coreBalance, portfolio.quoteToken.balance.decimals)}`);
+            console.log(`  Total Value: $${Number(portfolio.totalValueUsd) / 1e8}`);
+            console.log(`  Allocations: ${portfolio.baseAllocationPercent.toFixed(2)}% Base / ${portfolio.quoteAllocationPercent.toFixed(2)}% Quote`);
+            
+            // Analyze rebalancing need
+            const decision = await monitor.analyzeRebalanceNeed(target);
+            
+            if (decision.needsRebalance) {
+                console.log(`⚠️  REBALANCING NEEDED: ${decision.reason}`);
+                console.log(`  ${target.statistical_arb ? 'Statistical Arb' : 'Simple Bridge'} strategy will:`);
+                if (decision.tokenToSell && decision.tokenToBuy && decision.amountToRebalance) {
+                    console.log(`  - Sell: ${decision.amountToRebalance} of ${decision.tokenToSell}`);
+                    console.log(`  - Buy: ${decision.tokenToBuy}`);
+                    console.log(`  - Value: $${Number(decision.expectedValueUsd || 0n) / 1e8}`);
+                }
+                
+                // Execute rebalancing with gas configuration
+                console.log(`🚀 EXECUTING REBALANCING...`);
+                
+                // Gas configuration - could be made configurable via environment variables
+                const gasConfig = {
+                    maxGasPriceGwei: Number(process.env.MAX_GAS_PRICE_GWEI) || 50, // Default 50 gwei
+                    nativeHypeReserve: Number(process.env.NATIVE_HYPE_RESERVE) || 0.1 // Default 0.1 HYPE
+                };
+                
+                console.log(`⛽ Gas Config: Max ${gasConfig.maxGasPriceGwei} gwei, Reserve ${gasConfig.nativeHypeReserve} HYPE`);
+                
+                const result = await monitor.performCompleteRebalancing(target, gasConfig);
+                
+                if (result.success) {
+                    console.log(`✅ REBALANCING COMPLETED SUCCESSFULLY!`);
+                    if (result.hash) {
+                        console.log(`  📝 Transaction Hash: ${result.hash}`);
+                        console.log(`  🔗 Explorer: https://hyperevmscan.io/tx/${result.hash}`);
+                    }
+                    if (result.decision) {
+                        const strategy = target.statistical_arb ? 'Statistical Arbitrage' : 'Simple Bridge';
+                        console.log(`  📈 Strategy: ${strategy}`);
+                        console.log(`  💰 Value: $${Number(result.decision.expectedValueUsd || 0n) / 1e8}`);
+                    }
+                    console.log(`  ⛽ Gas Price: ${result.gasPrice} gwei`);
+                    if (result.whypeUnwrapped) {
+                        console.log(`  🔄 WHYPE Unwrapped for gas: Yes`);
+                    }
+                } else {
+                    console.log(`❌ REBALANCING FAILED: ${result.error}`);
+                    if (result.gasPrice) {
+                        console.log(`  ⛽ Gas Price: ${result.gasPrice} gwei`);
+                    }
+                    if (result.decision) {
+                        console.log(`  📊 Decision: ${result.decision.reason}`);
+                    }
+                    
+                    // Specific error handling for common issues
+                    if (result.error?.includes('gas price too high')) {
+                        console.log(`  ⏳ Suggestion: Wait for lower gas prices or increase MAX_GAS_PRICE_GWEI`);
+                    } else if (result.error?.includes('insufficient')) {
+                        console.log(`  💸 Suggestion: Check wallet balances and ensure sufficient funds`);
+                    } else if (result.error?.includes('slippage')) {
+                        console.log(`  📉 Suggestion: Market conditions may be unfavorable, will retry next cycle`);
+                    }
+                }
+            } else {
+                console.log(`✅ No rebalancing needed: ${decision.reason}`);
+            }
+            
+        } catch (error: any) {
+            console.error(`❌ Production monitoring error: ${error.message}`);
+            
+            // If it's a gas price error, log it but don't fail the entire monitoring
+            if (error.message.includes('gas price too high')) {
+                console.log(`⏳ Waiting for lower gas prices...`);
+            }
+        }
     }
 }
 
